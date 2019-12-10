@@ -89,6 +89,9 @@ public interface ImportOrganizer {
   ImportOrganizer ANDROID_STATIC_LAST_ORGANIZER =
       new AndroidImportOrganizer(StaticOrder.STATIC_LAST);
 
+  ImportOrganizer HUBSPOT_IMPORT_ORGANIZER =
+      new HubSpotImportOrganizer();
+
   /** Represents an import. */
   @AutoValue
   abstract class Import {
