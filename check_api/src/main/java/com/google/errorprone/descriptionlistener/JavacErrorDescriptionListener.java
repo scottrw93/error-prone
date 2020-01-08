@@ -14,19 +14,20 @@
  * limitations under the License.
  */
 
-package com.google.errorprone;
+package com.google.errorprone.descriptionlistener;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
+import com.google.errorprone.DescriptionListener;
 import com.google.errorprone.fixes.AppliedFix;
 import com.google.errorprone.fixes.Fix;
 import com.google.errorprone.matchers.Description;
 import com.sun.source.tree.Tree.Kind;
-import com.sun.tools.javac.tree.EndPosTable;
 import com.sun.tools.javac.util.Context;
 import com.sun.tools.javac.util.JCDiagnostic;
 import com.sun.tools.javac.util.JCDiagnostic.DiagnosticPosition;
 import com.sun.tools.javac.util.Log;
+
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.ArrayList;
@@ -55,20 +56,16 @@ public class JavacErrorDescriptionListener implements DescriptionListener {
   // The suffix for properties in src/main/resources/com/google/errorprone/errors.properties
   private static final String MESSAGE_BUNDLE_KEY = "error.prone";
 
-  private JavacErrorDescriptionListener(
-      Log log,
-      EndPosTable endPositions,
-      JavaFileObject sourceFile,
-      Context context,
-      boolean dontUseErrors) {
-    this.log = log;
-    this.sourceFile = sourceFile;
-    this.context = context;
-    this.dontUseErrors = dontUseErrors;
-    checkNotNull(endPositions);
+  public JavacErrorDescriptionListener(
+      DescriptionListenerResources resources) {
+    this.log = resources.getLog();
+    this.sourceFile = resources.getSourceFile();
+    this.context = resources.getContext();
+    this.dontUseErrors = !resources.getUseErrors();
+    checkNotNull(resources.getEndPositions());
     try {
       CharSequence sourceFileContent = sourceFile.getCharContent(true);
-      fixToAppliedFix = fix -> AppliedFix.fromSource(sourceFileContent, endPositions).apply(fix);
+      fixToAppliedFix = fix -> AppliedFix.fromSource(sourceFileContent, resources.getEndPositions()).apply(fix);
     } catch (IOException e) {
       throw new UncheckedIOException(e);
     }
@@ -144,17 +141,5 @@ public class JavacErrorDescriptionListener implements DescriptionListener {
       messageBuilder.append("?");
     }
     return messageBuilder.toString();
-  }
-
-  static Factory provider(Context context) {
-    return (log, compilation) ->
-        new JavacErrorDescriptionListener(
-            log, compilation.endPositions, compilation.getSourceFile(), context, false);
-  }
-
-  static Factory providerForRefactoring(Context context) {
-    return (log, compilation) ->
-        new JavacErrorDescriptionListener(
-            log, compilation.endPositions, compilation.getSourceFile(), context, true);
   }
 }
