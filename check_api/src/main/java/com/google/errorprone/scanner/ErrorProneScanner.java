@@ -17,7 +17,6 @@
 package com.google.errorprone.scanner;
 
 
-import com.google.common.base.Supplier;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.errorprone.BugPattern;
@@ -137,6 +136,7 @@ import com.sun.source.util.TreePath;
 import com.sun.tools.javac.code.Symbol.CompletionFailure;
 import com.sun.tools.javac.util.JCDiagnostic.DiagnosticPosition;
 import com.sun.tools.javac.util.Name;
+
 import java.lang.annotation.Annotation;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -451,7 +451,7 @@ public class ErrorProneScanner extends Scanner {
               processingFunction.process(matcher, tree, stateWithSuppressionInformation),
               stateWithSuppressionInformation);
         } catch (Throwable t) {
-          handleError(matcher, t);
+          handleError(matcher, t, errorProneOptions);
         }
       }
     }
@@ -902,6 +902,14 @@ public class ErrorProneScanner extends Scanner {
     return super.visitWildcard(tree, state);
   }
 
+  private void handleError(Suppressible s, Throwable t, ErrorProneOptions options) {
+    if (HubSpotErrorHandler.isEnabled(options)) {
+      HubSpotErrorHandler.recordError(s);
+    } else {
+      handleError(s, t);
+    }
+  }
+
   /**
    * Handles an exception thrown by an individual BugPattern. By default, wraps the exception in an
    * {@link ErrorProneError} and rethrows. May be overridden by subclasses, for example to log the
@@ -931,4 +939,5 @@ public class ErrorProneScanner extends Scanner {
   public ImmutableSet<BugChecker> getBugCheckers() {
     return this.bugCheckers;
   }
+
 }
