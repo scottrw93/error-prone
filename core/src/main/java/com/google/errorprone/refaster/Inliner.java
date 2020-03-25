@@ -21,13 +21,11 @@ import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import com.google.errorprone.SubContext;
-import com.google.errorprone.matchers.Enclosing.Class;
 import com.google.errorprone.refaster.Bindings.Key;
 import com.google.errorprone.refaster.UTypeVar.TypeWithExpression;
 import com.google.errorprone.util.ASTHelpers;
 import com.sun.tools.javac.code.Symbol;
 import com.sun.tools.javac.code.Symbol.ClassSymbol;
-import com.sun.tools.javac.code.Symbol.ModuleSymbol;
 import com.sun.tools.javac.code.Symbol.TypeSymbol;
 import com.sun.tools.javac.code.Symbol.TypeVariableSymbol;
 import com.sun.tools.javac.code.Symtab;
@@ -85,24 +83,17 @@ public final class Inliner {
   public ClassSymbol resolveClass(CharSequence qualifiedClass)
       throws CouldNotResolveImportException {
     try {
-      java.util.Optional<ClassSymbol> javaBase = resolveIdent(symtab().java_base, qualifiedClass);
-      if (javaBase.isPresent()) {
-        return javaBase.get();
+      Symbol symbol =
+          JavaCompiler.instance(context)
+              .resolveIdent(symtab().java_base, qualifiedClass.toString());
+      if (symbol.equals(symtab().errSymbol) || !(symbol instanceof ClassSymbol)) {
+        throw new CouldNotResolveImportException(qualifiedClass);
       } else {
-        return resolveIdent(symtab().unnamedModule, qualifiedClass)
-            .orElseThrow(() -> new CouldNotResolveImportException(qualifiedClass));
+        return (ClassSymbol) symbol;
       }
     } catch (NullPointerException e) {
       throw new CouldNotResolveImportException(qualifiedClass);
     }
-  }
-
-  private java.util.Optional<ClassSymbol> resolveIdent(ModuleSymbol moduleSymbol, CharSequence qualifiedClass) {
-    Symbol symbol = JavaCompiler.instance(context).resolveIdent(moduleSymbol, qualifiedClass.toString());
-
-    return java.util.Optional.ofNullable(symbol)
-        .filter(ClassSymbol.class::isInstance)
-        .map(ClassSymbol.class::cast);
   }
 
   public Context getContext() {
