@@ -218,6 +218,11 @@ public class TemplateIntegrationTest extends CompilerBasedTest {
   }
 
   @Test
+  public void expressionPlaceholderAllowsAnonymousClasses() throws IOException {
+    runTest("PlaceholderSupportsAnonymousClassTemplate");
+  }
+
+  @Test
   public void blockPlaceholder() throws IOException {
     runTest("BlockPlaceholderTemplate");
   }
@@ -331,6 +336,11 @@ public class TemplateIntegrationTest extends CompilerBasedTest {
   @Test
   public void placeholderAllowedVars() throws IOException {
     runTest("PlaceholderAllowedVarsTemplate");
+  }
+
+  @Test
+  public void placeholderAllowsGenerics() throws IOException {
+    runTest("PlaceholderAllowsGenericsTemplate");
   }
 
   @Test
