@@ -347,4 +347,9 @@ public class TemplateIntegrationTest extends CompilerBasedTest {
   public void unnecessaryLambdaParens() throws IOException {
     runTest("UnnecessaryLambdaParens");
   }
+
+  @Test
+  public void nonJdkType() throws IOException {
+    runTest("NonJdkTypeTemplate");
+  }
 }
