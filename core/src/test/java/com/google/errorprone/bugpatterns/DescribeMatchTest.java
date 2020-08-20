@@ -52,6 +52,29 @@ public class DescribeMatchTest {
             "    return describeMatch(tree, fix);",
             "  }",
             "}")
+        .addModules(
+            "jdk.compiler/com.sun.tools.javac.util", "jdk.compiler/com.sun.tools.javac.tree")
+        .doTest();
+  }
+
+  @Test
+  public void noMatchInBugChecker() {
+    testHelper
+        .addInputLines(
+            "BugChecker.java",
+            "package com.google.errorprone.bugpatterns;",
+            "import com.google.errorprone.fixes.Fix;",
+            "import com.sun.source.tree.Tree;",
+            "import com.google.errorprone.matchers.Description;",
+            "abstract class BugChecker {",
+            "  Description.Builder buildDescription(Tree tree) {",
+            "    return null;",
+            "  }",
+            "  Description fix(Tree tree, Fix fix) {",
+            "    return buildDescription(tree).addFix(fix).build();",
+            "  }",
+            "}")
+        .expectUnchanged()
         .doTest();
   }
 }

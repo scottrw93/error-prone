@@ -20,7 +20,6 @@ import static com.google.errorprone.BugPattern.SeverityLevel.ERROR;
 import static com.google.errorprone.matchers.Matchers.anyOf;
 
 import com.google.errorprone.BugPattern;
-import com.google.errorprone.BugPattern.ProvidesFix;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.bugpatterns.BugChecker.BinaryTreeMatcher;
 import com.google.errorprone.fixes.Fix;
@@ -58,8 +57,7 @@ import java.util.List;
             + "outside that range will always evaluate to false and usually indicates an error in "
             + "the code.\n\n"
             + "This checker currently supports checking for bad byte and character comparisons.",
-    severity = ERROR,
-    providesFix = ProvidesFix.REQUIRES_HUMAN_ATTENTION)
+    severity = ERROR)
 public class ComparisonOutOfRange extends BugChecker implements BinaryTreeMatcher {
 
   private static final String MESSAGE_TEMPLATE =
@@ -193,7 +191,7 @@ public class ComparisonOutOfRange extends BugChecker implements BinaryTreeMatche
               "byte",
               (int) Byte.MIN_VALUE,
               (int) Byte.MAX_VALUE,
-              literal,
+              state.getSourceForNode(literal),
               Boolean.toString(willEvaluateTo));
     } else {
       fix = SuggestedFix.replace(tree, Boolean.toString(willEvaluateTo));
@@ -203,7 +201,7 @@ public class ComparisonOutOfRange extends BugChecker implements BinaryTreeMatche
               "char",
               (int) Character.MIN_VALUE,
               (int) Character.MAX_VALUE,
-              literal,
+              state.getSourceForNode(literal),
               Boolean.toString(willEvaluateTo));
     }
     return buildDescription(tree).addFix(fix).setMessage(customDiagnosticMessage).build();

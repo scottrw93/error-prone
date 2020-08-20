@@ -19,27 +19,34 @@ package com.google.errorprone.fixes;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.collect.ImmutableList.toImmutableList;
+import static com.google.common.collect.ImmutableSet.toImmutableSet;
 import static com.google.common.collect.Iterables.getLast;
 import static com.google.errorprone.util.ASTHelpers.getAnnotation;
 import static com.google.errorprone.util.ASTHelpers.getAnnotationWithSimpleName;
 import static com.google.errorprone.util.ASTHelpers.getModifiers;
+import static com.google.errorprone.util.ASTHelpers.getStartPosition;
 import static com.google.errorprone.util.ASTHelpers.getSymbol;
 import static com.sun.source.tree.Tree.Kind.ASSIGNMENT;
 import static com.sun.source.tree.Tree.Kind.CONDITIONAL_EXPRESSION;
 import static com.sun.source.tree.Tree.Kind.NEW_ARRAY;
 import static com.sun.tools.javac.code.TypeTag.CLASS;
+import static com.sun.tools.javac.util.Position.NOPOS;
 import static java.util.stream.Collectors.joining;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Function;
 import com.google.common.base.Joiner;
+import com.google.common.base.Objects;
 import com.google.common.base.Predicates;
+import com.google.common.base.Splitter;
 import com.google.common.base.Verify;
 import com.google.common.collect.FluentIterable;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
+import com.google.common.collect.Streams;
 import com.google.common.io.CharStreams;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.apply.DescriptionBasedDiff;
@@ -50,10 +57,12 @@ import com.google.errorprone.util.ASTHelpers;
 import com.google.errorprone.util.ErrorProneToken;
 import com.google.errorprone.util.FindIdentifiers;
 import com.sun.source.doctree.DocTree;
+import com.sun.source.doctree.ParamTree;
 import com.sun.source.tree.AnnotationTree;
 import com.sun.source.tree.AssignmentTree;
 import com.sun.source.tree.BinaryTree;
 import com.sun.source.tree.ClassTree;
+import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.CompoundAssignmentTree;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.IdentifierTree;
@@ -64,10 +73,14 @@ import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.ModifiersTree;
 import com.sun.source.tree.NewArrayTree;
 import com.sun.source.tree.Tree;
+import com.sun.source.tree.TypeParameterTree;
 import com.sun.source.tree.VariableTree;
+import com.sun.source.util.DocSourcePositions;
 import com.sun.source.util.DocTreePath;
+import com.sun.source.util.DocTreeScanner;
 import com.sun.source.util.JavacTask;
 import com.sun.source.util.TreePath;
+import com.sun.source.util.TreeScanner;
 import com.sun.tools.javac.api.BasicJavacTask;
 import com.sun.tools.javac.api.JavacTool;
 import com.sun.tools.javac.api.JavacTrees;
@@ -76,6 +89,7 @@ import com.sun.tools.javac.code.Flags;
 import com.sun.tools.javac.code.Kinds.KindSelector;
 import com.sun.tools.javac.code.Symbol;
 import com.sun.tools.javac.code.Symbol.ClassSymbol;
+import com.sun.tools.javac.code.Symbol.MethodSymbol;
 import com.sun.tools.javac.code.Type;
 import com.sun.tools.javac.code.Types.DefaultTypeVisitor;
 import com.sun.tools.javac.main.Arguments;
@@ -83,10 +97,9 @@ import com.sun.tools.javac.parser.Tokens;
 import com.sun.tools.javac.parser.Tokens.Comment;
 import com.sun.tools.javac.parser.Tokens.TokenKind;
 import com.sun.tools.javac.tree.DCTree;
+import com.sun.tools.javac.tree.DCTree.DCDocComment;
 import com.sun.tools.javac.tree.JCTree;
 import com.sun.tools.javac.tree.JCTree.JCCompilationUnit;
-import com.sun.tools.javac.tree.JCTree.JCIdent;
-import com.sun.tools.javac.tree.TreeScanner;
 import com.sun.tools.javac.util.Context;
 import com.sun.tools.javac.util.Options;
 import com.sun.tools.javac.util.Position;
@@ -220,20 +233,39 @@ public class SuggestedFixes {
     if (toAdd.isEmpty()) {
       return;
     }
-    int pos =
-        state.getEndPosition(originalModifiers) != Position.NOPOS
-            ? state.getEndPosition(originalModifiers) + 1
-            : ((JCTree) tree).getStartPosition();
-    int insertPos =
-        state.getOffsetTokensForNode(tree).stream()
-            .mapToInt(ErrorProneToken::pos)
-            .filter(thisPos -> thisPos >= pos)
-            .findFirst()
-            .orElse(pos); // shouldn't ever be able to get to the else
+    int insertPos;
+    if (tree.getKind() == Tree.Kind.ANNOTATION_TYPE) {
+      // For annotation types, the modifiers tree include the '@' of @interface. And all modifiers
+      // must appear before @interface.
+      int pos =
+          Streams.findLast(
+                  state.getOffsetTokensForNode(originalModifiers).stream()
+                      .filter(tok -> tok.kind().equals(TokenKind.MONKEYS_AT)))
+              .get()
+              .pos();
+      insertPos =
+          state.getOffsetTokensForNode(tree).stream()
+              .mapToInt(ErrorProneToken::pos)
+              .filter(thisPos -> thisPos >= pos)
+              .findFirst()
+              .orElse(pos); // shouldn't ever be able to get to the else
+    } else {
+      int pos =
+          state.getEndPosition(originalModifiers) == NOPOS
+              ? getStartPosition(tree)
+              : state.getEndPosition(originalModifiers) + 1;
+      insertPos =
+          state.getOffsetTokensForNode(originalModifiers).stream()
+              .filter(t -> getTokModifierKind(t) != null)
+              .mapToInt(t -> t.endPos() + 1)
+              .max()
+              .orElse(pos);
+    }
+
     fix.replace(insertPos, insertPos, Joiner.on(' ').join(toAdd) + " ");
   }
 
-  /** Remove modifiers from the given class, method, or field declaration. */
+  /** Removes modifiers from the given class, method, or field declaration. */
   public static Optional<SuggestedFix> removeModifiers(
       Tree tree, VisitorState state, Modifier... modifiers) {
     Set<Modifier> toRemove = ImmutableSet.copyOf(modifiers);
@@ -244,7 +276,7 @@ public class SuggestedFixes {
     return removeModifiers(originalModifiers, state, toRemove);
   }
 
-  /** Adds modifiers to the given declaration and corresponding modifiers tree. */
+  /** Removes modifiers to the given declaration and corresponding modifiers tree. */
   public static Optional<SuggestedFix> removeModifiers(
       ModifiersTree originalModifiers, VisitorState state, Set<Modifier> toRemove) {
     SuggestedFix.Builder fix = SuggestedFix.builder();
@@ -264,11 +296,12 @@ public class SuggestedFixes {
   }
 
   /**
-   * Returns a human-friendly name of the given {@link Symbol.TypeSymbol} for use in fixes.
+   * Returns a human-friendly name of the given {@link Symbol} for use in fixes.
    *
    * <ul>
-   *   <li>If the type is already imported, its simple name is used.
-   *   <li>If an enclosing type is imported, that enclosing type is used as a qualified.
+   *   <li>If the symbol is already in scope, its simple name is used.
+   *   <li>If the symbol is a {@link Symbol.TypeSymbol} and an enclosing type is imported, that
+   *       enclosing type is used as a qualified.
    *   <li>Otherwise the outermost enclosing type is imported and used as a qualifier.
    * </ul>
    */
@@ -283,6 +316,9 @@ public class SuggestedFixes {
         }
         sym = ((ClassSymbol) sym).getSuperclass().tsym;
       }
+    }
+    if (variableClashInScope(state, sym)) {
+      return qualifyType(state, fix, sym.owner) + "." + sym.getSimpleName();
     }
     Deque<String> names = new ArrayDeque<>();
     for (Symbol curr = sym; curr != null; curr = curr.owner) {
@@ -304,6 +340,27 @@ public class SuggestedFixes {
       }
     }
     return Joiner.on('.').join(names);
+  }
+
+  private static boolean variableClashInScope(VisitorState state, Symbol sym) {
+    if (!sym.getKind().isField()) {
+      return false;
+    }
+    MethodTree method = state.findEnclosing(MethodTree.class);
+    if (method == null) {
+      return false;
+    }
+    boolean[] result = {false};
+    new TreeScanner<Void, Void>() {
+      @Override
+      public Void visitVariable(VariableTree tree, Void unused) {
+        if (tree.getName().contentEquals(sym.getSimpleName())) {
+          result[0] = true;
+        }
+        return super.visitVariable(tree, null);
+      }
+    }.scan(method, null);
+    return result[0];
   }
 
   /** Returns a human-friendly name of the given type for use in fixes. */
@@ -343,32 +400,44 @@ public class SuggestedFixes {
         fix);
   }
 
+  private static final Splitter COMPONENT_SPLITTER = Splitter.on('.');
+
   /**
    * Returns a human-friendly name of the given {@code typeName} for use in fixes.
    *
    * <p>This should be used if the type may not be loaded.
+   *
+   * @param typeName a qualified canonical type name, e.g. {@code java.util.Map.Entry}.
    */
   public static String qualifyType(VisitorState state, SuggestedFix.Builder fix, String typeName) {
-    for (int startOfClass = typeName.indexOf('.');
-        startOfClass > 0;
-        startOfClass = typeName.indexOf('.', startOfClass + 1)) {
-      int endOfClass = typeName.indexOf('.', startOfClass + 1);
-      if (endOfClass < 0) {
-        endOfClass = typeName.length();
-      }
-      if (!Character.isUpperCase(typeName.charAt(startOfClass + 1))) {
+    List<String> components = COMPONENT_SPLITTER.splitToList(typeName);
+    // Check if the simple name is already visible.
+    String simpleName = Iterables.getLast(components);
+    Symbol simpleNameSymbol = FindIdentifiers.findIdent(simpleName, state, KindSelector.VAL_TYP);
+    if (simpleNameSymbol != null
+        && !simpleNameSymbol.getKind().equals(ElementKind.OTHER)
+        && simpleNameSymbol.getQualifiedName().contentEquals(typeName)) {
+      return simpleName;
+    }
+
+    for (int i = 0; i < components.size(); ++i) {
+      String component = components.get(i);
+      // If it's lowercase, probably a package name.
+      if (!Character.isUpperCase(component.charAt(0))) {
         continue;
       }
-      String className = typeName.substring(startOfClass + 1);
-      Symbol found = FindIdentifiers.findIdent(className, state, KindSelector.VAL_TYP);
+      // The qualified name up to (and including) the component we're currently dealing with.
+      String qualifiedName = components.subList(0, i + 1).stream().collect(joining("."));
+
+      Symbol found = FindIdentifiers.findIdent(component, state, KindSelector.VAL_TYP);
       // No clashing name: import it and return.
       if (found == null) {
-        fix.addImport(typeName.substring(0, endOfClass));
-        return className;
+        fix.addImport(qualifiedName);
+        return components.subList(i, components.size()).stream().collect(joining("."));
       }
-      // Type already imported.
-      if (found.getQualifiedName().contentEquals(typeName)) {
-        return className;
+      // Type already imported or otherwise visible.
+      if (found.getQualifiedName().contentEquals(qualifiedName)) {
+        return components.subList(i, components.size()).stream().collect(joining("."));
       }
     }
     return typeName;
@@ -382,22 +451,29 @@ public class SuggestedFixes {
       String qualifiedName, SuggestedFix.Builder fix, VisitorState state) {
     String name = qualifiedName.substring(qualifiedName.lastIndexOf(".") + 1);
     AtomicBoolean foundConflict = new AtomicBoolean(false);
-    new TreeScanner() {
+    new TreeScanner<Void, Void>() {
+
       @Override
-      public void visitIdent(JCIdent ident) {
-        if (ident.name.contentEquals(name)) {
-          Symbol symbol = getSymbol(ident);
-          if (symbol == null) {
-            return;
-          }
-          String identifierQualifiedName =
-              symbol.owner.getQualifiedName() + "." + symbol.getSimpleName();
-          if (!qualifiedName.equals(identifierQualifiedName)) {
-            foundConflict.set(true);
-          }
+      public Void visitIdentifier(IdentifierTree ident, Void unused) {
+        process(ident);
+        return super.visitIdentifier(ident, null);
+      }
+
+      private void process(IdentifierTree ident) {
+        if (!ident.getName().contentEquals(name)) {
+          return;
+        }
+        Symbol symbol = getSymbol(ident);
+        if (symbol == null) {
+          return;
+        }
+        String identifierQualifiedName =
+            symbol.owner.getQualifiedName() + "." + symbol.getSimpleName();
+        if (!qualifiedName.equals(identifierQualifiedName)) {
+          foundConflict.set(true);
         }
       }
-    }.scan((JCCompilationUnit) state.getPath().getCompilationUnit());
+    }.scan(state.getPath().getCompilationUnit(), null);
     if (foundConflict.get()) {
       String className = qualifiedName.substring(0, qualifiedName.lastIndexOf("."));
       return qualifyType(state, fix, className) + "." + name;
@@ -460,14 +536,14 @@ public class SuggestedFixes {
       @Override
       int pos(ClassTree tree, VisitorState state) {
         // We scan backwards from the first member, looking for the class's opening { token.
-        int classStart = ((JCTree) tree).getStartPosition();
+        int classStart = getStartPosition(tree);
         List<? extends Tree> members =
             tree.getMembers().stream()
                 /* Throw away generated members, which may be synthetic, or whose start
                 position may be the same as the class's. We only want to look at members defined
                 in the source, so we can find a source position which is after the opening {.*/
                 .filter(AdditionPosition::definedInSourceFile)
-                .filter(member -> ((JCTree) member).getStartPosition() > classStart)
+                .filter(member -> getStartPosition(member) > classStart)
                 .collect(toImmutableList());
         if (members.isEmpty()) {
           // The approach for inserting first only works if there's a member, but if not then LAST
@@ -554,34 +630,31 @@ public class SuggestedFixes {
     String name = tree.getName().toString();
     int typeEndPos = state.getEndPosition(tree.getType());
     // handle implicit lambda parameter types
-    int searchOffset = typeEndPos == -1 ? 0 : (typeEndPos - ((JCTree) tree).getStartPosition());
-    int pos =
-        ((JCTree) tree).getStartPosition()
-            + state.getSourceForNode(tree).indexOf(name, searchOffset);
+    int searchOffset = typeEndPos == -1 ? 0 : (typeEndPos - getStartPosition(tree));
+    int pos = getStartPosition(tree) + state.getSourceForNode(tree).indexOf(name, searchOffset);
     final SuggestedFix.Builder fix =
         SuggestedFix.builder().replace(pos, pos + name.length(), replacement);
     final Symbol.VarSymbol sym = getSymbol(tree);
-    ((JCTree) state.getPath().getCompilationUnit())
-        .accept(
-            new TreeScanner() {
-              @Override
-              public void visitIdent(JCTree.JCIdent tree) {
-                if (sym.equals(getSymbol(tree))) {
-                  fix.replace(tree, replacement);
-                }
-              }
+    new TreeScanner<Void, Void>() {
+      @Override
+      public Void visitIdentifier(IdentifierTree tree, Void unused) {
+        if (sym.equals(getSymbol(tree))) {
+          fix.replace(tree, replacement);
+        }
+        return super.visitIdentifier(tree, null);
+      }
 
-              @Override
-              public void visitSelect(JCTree.JCFieldAccess tree) {
-                if (sym.equals(getSymbol(tree))) {
-                  fix.replace(
-                      state.getEndPosition(tree.getExpression()),
-                      state.getEndPosition(tree),
-                      "." + replacement);
-                }
-                super.visitSelect(tree);
-              }
-            });
+      @Override
+      public Void visitMemberSelect(MemberSelectTree tree, Void unused) {
+        if (sym.equals(getSymbol(tree))) {
+          fix.replace(
+              state.getEndPosition(tree.getExpression()),
+              state.getEndPosition(tree),
+              "." + replacement);
+        }
+        return super.visitMemberSelect(tree, null);
+      }
+    }.scan(state.getPath().getCompilationUnit(), null);
     return fix.build();
   }
 
@@ -589,19 +662,48 @@ public class SuggestedFixes {
   public static SuggestedFix renameMethod(
       MethodTree tree, final String replacement, VisitorState state) {
     // Search tokens from beginning of method tree to beginning of method body.
-    int basePos = ((JCTree) tree).getStartPosition();
+    int basePos = getStartPosition(tree);
     int endPos =
-        tree.getBody() != null
-            ? ((JCTree) tree.getBody()).getStartPosition()
-            : state.getEndPosition(tree);
+        tree.getBody() != null ? getStartPosition(tree.getBody()) : state.getEndPosition(tree);
     List<ErrorProneToken> methodTokens = state.getOffsetTokens(basePos, endPos);
     for (ErrorProneToken token : methodTokens) {
       if (token.kind() == TokenKind.IDENTIFIER && token.name().equals(tree.getName())) {
-        return SuggestedFix.builder().replace(token.pos(), token.endPos(), replacement).build();
+        return SuggestedFix.replace(token.pos(), token.endPos(), replacement);
       }
     }
     // Method name not found.
     throw new AssertionError();
+  }
+
+  /**
+   * Renames the given {@link MethodTree} and its usages in the current compilation unit to {@code
+   * replacement}.
+   */
+  public static SuggestedFix renameMethodWithInvocations(
+      MethodTree tree, final String replacement, VisitorState state) {
+    SuggestedFix.Builder fix = SuggestedFix.builder().merge(renameMethod(tree, replacement, state));
+    MethodSymbol sym = getSymbol(tree);
+    new TreeScanner<Void, Void>() {
+      @Override
+      public Void visitIdentifier(IdentifierTree tree, Void unused) {
+        if (sym.equals(getSymbol(tree))) {
+          fix.replace(tree, replacement);
+        }
+        return super.visitIdentifier(tree, null);
+      }
+
+      @Override
+      public Void visitMemberSelect(MemberSelectTree tree, Void unused) {
+        if (sym.equals(getSymbol(tree))) {
+          fix.replace(
+              state.getEndPosition(tree.getExpression()),
+              state.getEndPosition(tree),
+              "." + replacement);
+        }
+        return super.visitMemberSelect(tree, null);
+      }
+    }.scan(state.getPath().getCompilationUnit(), null);
+    return fix.build();
   }
 
   /** Replaces the name of the method being invoked in {@code tree} with {@code replacement}. */
@@ -615,14 +717,14 @@ public class SuggestedFixes {
       startPos = state.getEndPosition(((MemberSelectTree) methodSelect).getExpression());
     } else if (methodSelect instanceof IdentifierTree) {
       identifier = ((IdentifierTree) methodSelect).getName();
-      startPos = ((JCTree) tree).getStartPosition();
+      startPos = getStartPosition(tree);
     } else {
       throw malformedMethodInvocationTree(tree);
     }
     int endPos =
         tree.getArguments().isEmpty()
             ? state.getEndPosition(tree)
-            : ((JCTree) tree.getArguments().get(0)).getStartPosition();
+            : getStartPosition(tree.getArguments().get(0));
     List<ErrorProneToken> tokens = state.getOffsetTokens(startPos, endPos);
     for (ErrorProneToken token : Lists.reverse(tokens)) {
       if (token.kind() == TokenKind.IDENTIFIER && token.name().equals(identifier)) {
@@ -632,10 +734,79 @@ public class SuggestedFixes {
     throw malformedMethodInvocationTree(tree);
   }
 
-  private static final IllegalStateException malformedMethodInvocationTree(
-      MethodInvocationTree tree) {
+  private static IllegalStateException malformedMethodInvocationTree(MethodInvocationTree tree) {
     return new IllegalStateException(
         String.format("Couldn't replace the method name in %s.", tree));
+  }
+
+  /**
+   * Renames a type parameter {@code typeParameter} owned by {@code owningTree} to {@code
+   * typeVarReplacement}. Renames occurrences in Javadoc as well.
+   */
+  public static SuggestedFix renameTypeParameter(
+      TypeParameterTree typeParameter,
+      Tree owningTree,
+      String typeVarReplacement,
+      VisitorState state) {
+    Symbol typeParameterSymbol = getSymbol(typeParameter);
+
+    // replace only the type parameter name (and not any upper bounds)
+    String name = typeParameter.getName().toString();
+    int pos = getStartPosition(typeParameter);
+    Builder fixBuilder =
+        SuggestedFix.builder().replace(pos, pos + name.length(), typeVarReplacement);
+
+    new TreeScanner<Void, Void>() {
+      @Override
+      public Void visitIdentifier(IdentifierTree tree, Void unused) {
+        Symbol identSym = getSymbol(tree);
+        if (Objects.equal(identSym, typeParameterSymbol)) {
+          // Lambda parameters can be desugared early, so we need to make sure the source
+          // is there. In the example below, we would try to suggest replacing the node 't'
+          // with T2, since the compiler desugars to g((T t) -> false). The extra condition
+          // prevents us from doing that.
+
+          // Foo<T> {
+          //   <G> void g(Predicate<G> p) {},
+          //   <T> void blah() {
+          //     g(t -> false);
+          //   }
+          // }
+          if (Objects.equal(state.getSourceForNode(tree), name)) {
+            fixBuilder.replace(tree, typeVarReplacement);
+          }
+        }
+        return super.visitIdentifier(tree, null);
+      }
+    }.scan(owningTree, null);
+    DCDocComment docCommentTree =
+        (DCDocComment) JavacTrees.instance(state.context).getDocCommentTree(state.getPath());
+    if (docCommentTree != null) {
+      docCommentTree.accept(
+          new DocTreeScanner<Void, Void>() {
+            @Override
+            public Void visitParam(ParamTree paramTree, Void unused) {
+              if (paramTree.isTypeParameter()
+                  && paramTree.getName().getName().contentEquals(name)) {
+                DocSourcePositions positions =
+                    JavacTrees.instance(state.context).getSourcePositions();
+                CompilationUnitTree compilationUnitTree = state.getPath().getCompilationUnit();
+                int startPos =
+                    (int)
+                        positions.getStartPosition(
+                            compilationUnitTree, docCommentTree, paramTree.getName());
+                int endPos =
+                    (int)
+                        positions.getEndPosition(
+                            compilationUnitTree, docCommentTree, paramTree.getName());
+                fixBuilder.replace(startPos, endPos, typeVarReplacement);
+              }
+              return super.visitParam(paramTree, null);
+            }
+          },
+          null);
+    }
+    return fixBuilder.build();
   }
 
   /** Deletes the given exceptions from a method's throws clause. */
@@ -659,7 +830,7 @@ public class SuggestedFixes {
                 })
             .join(Joiner.on(", "));
     return SuggestedFix.replace(
-        ((JCTree) tree.getThrows().get(0)).getStartPosition(),
+        getStartPosition(tree.getThrows().get(0)),
         state.getEndPosition(getLast(tree.getThrows())),
         replacement);
   }
@@ -734,6 +905,45 @@ public class SuggestedFixes {
       String warningToSuppress,
       @Nullable String lineComment) {
     addSuppressWarnings(fixBuilder, state, warningToSuppress, lineComment, true);
+  }
+  /**
+   * Modifies {@code fixBuilder} to either remove a {@code warningToRemove} warning from the closest
+   * {@code SuppressWarning} node or remove the entire {@code SuppressWarning} node if {@code
+   * warningToRemove} is the only warning in that node.
+   */
+  public static void removeSuppressWarnings(
+      SuggestedFix.Builder fixBuilder, VisitorState state, String warningToRemove) {
+    // Find the nearest tree to remove @SuppressWarnings from.
+    Tree suppressibleNode = suppressibleNode(state.getPath());
+    if (suppressibleNode == null) {
+      return;
+    }
+
+    AnnotationTree suppressAnnotationTree =
+        getAnnotationWithSimpleName(
+            findAnnotationsTree(suppressibleNode), SuppressWarnings.class.getSimpleName());
+    if (suppressAnnotationTree == null) {
+      return;
+    }
+
+    SuppressWarnings annotation = getAnnotation(suppressibleNode, SuppressWarnings.class);
+    ImmutableSet<String> warningsSuppressed = ImmutableSet.copyOf(annotation.value());
+    ImmutableSet<String> newWarningSet =
+        warningsSuppressed.stream()
+            .filter(warning -> !warning.equals(warningToRemove))
+            .map(warningToKeep -> state.getElements().getConstantExpression(warningToKeep))
+            .collect(toImmutableSet());
+    if (newWarningSet.size() == warningsSuppressed.size()) {
+      // no matches found. Nothing to delete.
+      return;
+    }
+    if (newWarningSet.isEmpty()) {
+      // No warning left to suppress. Delete entire annotation.
+      fixBuilder.delete(suppressAnnotationTree);
+      return;
+    }
+    fixBuilder.merge(
+        updateAnnotationArgumentValues(suppressAnnotationTree, "value", newWarningSet));
   }
 
   /**
@@ -811,9 +1021,12 @@ public class SuggestedFixes {
         .filter(
             tree ->
                 tree instanceof MethodTree
+                    // Anonymous classes can't be suppressed
                     || (tree instanceof ClassTree
                         && ((ClassTree) tree).getSimpleName().length() != 0)
-                    || tree instanceof VariableTree)
+                    // Lambda parameters can't be suppressed unless they have Type decls
+                    || (tree instanceof VariableTree
+                        && getStartPosition(((VariableTree) tree).getType()) != -1))
         .findFirst()
         .orElse(null);
   }
@@ -1028,6 +1241,11 @@ public class SuggestedFixes {
         // recompiles to avoid infinite recursion.
         continue;
       }
+      if (SOURCE_TARGET_OPTIONS.contains(key) && originalOptions.isSet("--release")) {
+        // javac does not allow -source and -target to be specified explicitly when --release is,
+        // but does add them in response to passing --release. Here we invert that operation.
+        continue;
+      }
       options.put(key, value);
     }
     JavacTask newTask =
@@ -1081,6 +1299,9 @@ public class SuggestedFixes {
     }
     return true;
   }
+
+  private static final ImmutableSet<String> SOURCE_TARGET_OPTIONS =
+      ImmutableSet.of("-source", "--source", "-target", "--target");
 
   /** Create a plausible URI to use in {@link #compilesWithFix}. */
   @VisibleForTesting
@@ -1280,7 +1501,7 @@ public class SuggestedFixes {
     if (previousMember != null) {
       startTokenization = state.getEndPosition(previousMember);
     } else if (state.getEndPosition(classTree.getModifiers()) == Position.NOPOS) {
-      startTokenization = ((JCTree) classTree).getStartPosition();
+      startTokenization = getStartPosition(classTree);
     } else {
       startTokenization = state.getEndPosition(classTree.getModifiers());
     }
@@ -1299,7 +1520,7 @@ public class SuggestedFixes {
         ImmutableList.sortedCopyOf(
             Comparator.<Comment>comparingInt(c -> c.getSourcePos(0)).reversed(),
             tokens.get(0).comments());
-    int startPos = ((JCTree) tree).getStartPosition();
+    int startPos = getStartPosition(tree);
     // This can happen for desugared expressions like `int a, b;`.
     if (startPos < startTokenization) {
       return SuggestedFix.builder().build();

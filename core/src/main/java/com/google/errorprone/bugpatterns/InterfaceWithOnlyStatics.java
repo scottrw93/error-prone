@@ -18,10 +18,10 @@ package com.google.errorprone.bugpatterns;
 
 import static com.google.common.collect.Iterables.getLast;
 import static com.google.errorprone.bugpatterns.inject.dagger.DaggerAnnotations.isAnyModule;
+import static com.google.errorprone.util.ASTHelpers.getStartPosition;
 import static com.google.errorprone.util.ASTHelpers.getSymbol;
 
 import com.google.errorprone.BugPattern;
-import com.google.errorprone.BugPattern.ProvidesFix;
 import com.google.errorprone.BugPattern.SeverityLevel;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.bugpatterns.BugChecker.ClassTreeMatcher;
@@ -36,7 +36,6 @@ import com.sun.source.tree.VariableTree;
 import com.sun.tools.javac.code.Symbol;
 import com.sun.tools.javac.code.Symbol.ClassSymbol;
 import com.sun.tools.javac.parser.Tokens.TokenKind;
-import com.sun.tools.javac.tree.JCTree;
 import java.util.List;
 import javax.lang.model.element.Modifier;
 
@@ -50,8 +49,7 @@ import javax.lang.model.element.Modifier;
     summary =
         "This interface only contains static fields and methods; consider making it a final class "
             + "instead to prevent subclassing.",
-    severity = SeverityLevel.WARNING,
-    providesFix = ProvidesFix.REQUIRES_HUMAN_ATTENTION)
+    severity = SeverityLevel.WARNING)
 public final class InterfaceWithOnlyStatics extends BugChecker implements ClassTreeMatcher {
   @Override
   public Description matchClass(ClassTree tree, VisitorState state) {
@@ -103,8 +101,8 @@ public final class InterfaceWithOnlyStatics extends BugChecker implements ClassT
   }
 
   private static SuggestedFix fixClass(ClassTree classTree, VisitorState state) {
-    int startPos = ((JCTree) classTree).getStartPosition();
-    int endPos = ((JCTree) classTree.getMembers().get(0)).getStartPosition();
+    int startPos = getStartPosition(classTree);
+    int endPos = getStartPosition(classTree.getMembers().get(0));
     List<ErrorProneToken> tokens = state.getOffsetTokens(startPos, endPos);
     String modifiers =
         getSymbol(classTree).owner.enclClass() == null ? "final class" : "static final class";

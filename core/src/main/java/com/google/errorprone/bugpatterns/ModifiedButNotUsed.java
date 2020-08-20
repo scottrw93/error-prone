@@ -17,7 +17,6 @@ package com.google.errorprone.bugpatterns;
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static com.google.common.collect.ImmutableSet.toImmutableSet;
 import static com.google.common.collect.Iterables.getOnlyElement;
-import static com.google.errorprone.BugPattern.ProvidesFix.REQUIRES_HUMAN_ATTENTION;
 import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
 import static com.google.errorprone.matchers.Description.NO_MATCH;
 import static com.google.errorprone.matchers.Matchers.allOf;
@@ -78,7 +77,6 @@ import java.util.stream.Stream;
 @BugPattern(
     name = "ModifiedButNotUsed",
     summary = "A collection or proto builder was created, but its values were never accessed.",
-    providesFix = REQUIRES_HUMAN_ATTENTION,
     severity = WARNING)
 public class ModifiedButNotUsed extends BugChecker
     implements ExpressionStatementTreeMatcher, VariableTreeMatcher {
@@ -210,11 +208,11 @@ public class ModifiedButNotUsed extends BugChecker
     if (tree.getInitializer() == null) {
       new TreePathScanner<Void, Void>() {
         @Override
-        public Void visitAssignment(AssignmentTree node, Void aVoid) {
+        public Void visitAssignment(AssignmentTree node, Void unused) {
           if (symbol.equals(getSymbol(node.getVariable()))) {
             initializers.add(new TreePath(getCurrentPath(), node.getExpression()));
           }
-          return super.visitAssignment(node, aVoid);
+          return super.visitAssignment(node, unused);
         }
       }.scan(state.getPath().getParentPath(), null);
     } else {

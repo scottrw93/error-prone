@@ -22,7 +22,6 @@ import static com.google.errorprone.matchers.method.MethodMatchers.instanceMetho
 import static com.google.errorprone.matchers.method.MethodMatchers.staticMethod;
 
 import com.google.errorprone.BugPattern;
-import com.google.errorprone.BugPattern.ProvidesFix;
 import com.google.errorprone.BugPattern.SeverityLevel;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.bugpatterns.BugChecker.VariableTreeMatcher;
@@ -68,9 +67,9 @@ import javax.lang.model.element.ElementKind;
     name = "UnnecessaryBoxedVariable",
     summary = "It is unnecessary for this variable to be boxed. Use the primitive instead.",
     explanation =
-        "This variable is of boxed type, but is always unboxed before use. Make it primitive"
-            + " instead",
-    providesFix = ProvidesFix.REQUIRES_HUMAN_ATTENTION,
+        "This variable is of boxed type, but equivalent semantics can be achieved using the"
+            + " corresponding primitive type, which avoids the cost of constructing an unnecessary"
+            + " object.",
     severity = SeverityLevel.SUGGESTION)
 public class UnnecessaryBoxedVariable extends BugChecker implements VariableTreeMatcher {
   private static final Matcher<ExpressionTree> VALUE_OF_MATCHER =
@@ -134,9 +133,10 @@ public class UnnecessaryBoxedVariable extends BugChecker implements VariableTree
       fixBuilder.replace(nullableAnnotation, "");
       return buildDescription(tree)
           .setMessage(
-              "This @Nullable is always unboxed when used, which will result in a NPE if it is"
-                  + " actually null. Use a primitive if this variable should never be null, or"
-                  + " else fix the code to avoid unboxing it.")
+              "All usages of this @Nullable variable would result in a NullPointerException when it"
+                  + " actually is null. Use the primitive type if this variable should never be"
+                  + " null, or else fix the code to avoid unboxing or invoking its instance"
+                  + " methods.")
           .addFix(fixBuilder.build())
           .build();
     } else {
@@ -446,7 +446,7 @@ public class UnnecessaryBoxedVariable extends BugChecker implements VariableTree
     }
 
     @Override
-    public Void visitMemberReference(MemberReferenceTree node, Void aVoid) {
+    public Void visitMemberReference(MemberReferenceTree node, Void unused) {
       ExpressionTree qualifierExpression = node.getQualifierExpression();
       if (qualifierExpression.getKind() == Kind.IDENTIFIER) {
         Symbol symbol = ASTHelpers.getSymbol(qualifierExpression);
@@ -456,7 +456,7 @@ public class UnnecessaryBoxedVariable extends BugChecker implements VariableTree
           return null;
         }
       }
-      return super.visitMemberReference(node, aVoid);
+      return super.visitMemberReference(node, unused);
     }
   }
 }

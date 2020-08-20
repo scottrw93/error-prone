@@ -36,6 +36,7 @@ import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import com.google.errorprone.bugpatterns.BugChecker.ReturnTreeMatcher;
 import com.google.errorprone.matchers.Description;
 import com.google.errorprone.matchers.Matcher;
+import com.google.errorprone.matchers.Matchers;
 import com.google.errorprone.util.ASTHelpers;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.LambdaExpressionTree;
@@ -50,8 +51,6 @@ import com.sun.tools.javac.code.Symbol.MethodSymbol;
 import com.sun.tools.javac.code.Symbol.TypeVariableSymbol;
 import com.sun.tools.javac.code.Type;
 import com.sun.tools.javac.code.TypeTag;
-import com.sun.tools.javac.tree.JCTree.JCLambda;
-import com.sun.tools.javac.tree.JCTree.JCMemberReference;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationHandler;
 import java.util.ArrayDeque;
@@ -302,7 +301,7 @@ public final class FutureReturnValueIgnored extends AbstractReturnValueIgnored
 
   private static boolean isObjectReturningMethodReferenceExpression(
       MemberReferenceTree tree, VisitorState state) {
-    return functionalInterfaceReturnsObject(((JCMemberReference) tree).type, state);
+    return functionalInterfaceReturnsObject(ASTHelpers.getType(tree), state);
   }
 
   private static boolean isObjectReturningLambdaExpression(Tree tree, VisitorState state) {
@@ -310,7 +309,7 @@ public final class FutureReturnValueIgnored extends AbstractReturnValueIgnored
       return false;
     }
 
-    Type type = ((JCLambda) tree).type;
+    Type type = ASTHelpers.getType(tree);
     return functionalInterfaceReturnsObject(type, state)
         && !isWhitelistedInterfaceType(type, state);
   }
@@ -340,8 +339,8 @@ public final class FutureReturnValueIgnored extends AbstractReturnValueIgnored
       if (allOf(
               (t, s) -> t.getMode() == ReferenceMode.INVOKE,
               FutureReturnValueIgnored::isObjectReturningMethodReferenceExpression,
-              not((t, s) -> isWhitelistedInterfaceType(((JCMemberReference) t).type, s)),
-              not((t, s) -> isThrowingFunctionalInterface(((JCMemberReference) t).type, s)),
+              not((t, s) -> isWhitelistedInterfaceType(ASTHelpers.getType(t), s)),
+              not((t, s) -> Matchers.isThrowingFunctionalInterface(ASTHelpers.getType(t), s)),
               specializedMatcher())
           .matches(tree, state)) {
         return describeMatch(tree);

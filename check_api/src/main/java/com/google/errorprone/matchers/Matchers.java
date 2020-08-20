@@ -16,7 +16,9 @@
 
 package com.google.errorprone.matchers;
 
+import static com.google.common.collect.ImmutableSet.toImmutableSet;
 import static com.google.common.collect.Iterables.getLast;
+import static com.google.common.collect.Streams.stream;
 import static com.google.errorprone.suppliers.Suppliers.BOOLEAN_TYPE;
 import static com.google.errorprone.suppliers.Suppliers.INT_TYPE;
 import static com.google.errorprone.suppliers.Suppliers.JAVA_LANG_BOOLEAN_TYPE;
@@ -29,8 +31,10 @@ import static com.google.errorprone.util.ASTHelpers.isSubtype;
 import static com.google.errorprone.util.ASTHelpers.stripParentheses;
 import static java.util.Objects.requireNonNull;
 
+import com.google.common.base.VerifyException;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Sets;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.dataflow.nullnesspropagation.Nullness;
 import com.google.errorprone.matchers.ChildMultiMatcher.MatchType;
@@ -66,6 +70,7 @@ import com.sun.source.tree.TypeCastTree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreePath;
 import com.sun.tools.javac.code.Symbol;
+import com.sun.tools.javac.code.Symbol.ClassSymbol;
 import com.sun.tools.javac.code.Symbol.MethodSymbol;
 import com.sun.tools.javac.code.Symbol.VarSymbol;
 import com.sun.tools.javac.code.Type;
@@ -81,9 +86,11 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.BiPredicate;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.NestingKind;
@@ -122,6 +129,22 @@ public class Matchers {
    */
   @SafeVarargs
   public static <T extends Tree> Matcher<T> allOf(final Matcher<? super T>... matchers) {
+    return (t, state) -> {
+      for (Matcher<? super T> matcher : matchers) {
+        if (!matcher.matches(t, state)) {
+          return false;
+        }
+      }
+      return true;
+    };
+  }
+
+  /**
+   * Compose several matchers together, such that the composite matches an AST node iff all the
+   * given matchers do.
+   */
+  public static <T extends Tree> Matcher<T> allOf(
+      final Iterable<? extends Matcher<? super T>> matchers) {
     return (t, state) -> {
       for (Matcher<? super T> matcher : matchers) {
         if (!matcher.matches(t, state)) {
@@ -363,7 +386,7 @@ public class Matchers {
    * parentNode(kindIs(Kind.RETURN))} would match the {@code this} expression in {@code return
    * this;}
    */
-  public static Matcher<Tree> parentNode(Matcher<Tree> treeMatcher) {
+  public static <T extends Tree> Matcher<T> parentNode(Matcher<Tree> treeMatcher) {
     return (tree, state) -> {
       TreePath parent = requireNonNull(state.getPath().getParentPath());
       return treeMatcher.matches(parent.getLeaf(), state.withPath(parent));
@@ -459,6 +482,13 @@ public class Matchers {
   public static <T extends Tree> Matcher<T> isPrimitiveOrBoxedPrimitiveType() {
     return typePredicateMatcher(
         (type, state) -> state.getTypes().unboxedTypeOrType(type).isPrimitive());
+  }
+
+  /** Matches an AST node if its type is a boxed primitive type. */
+  public static Matcher<ExpressionTree> isBoxedPrimitiveType() {
+    return typePredicateMatcher(
+        (type, state) ->
+            !state.getTypes().isSameType(state.getTypes().unboxedType(type), Type.noType));
   }
 
   /** Matches an AST node which is enclosed by a block node that matches the given matcher. */
@@ -958,6 +988,11 @@ public class Matchers {
     return (variableTree, state) -> ElementKind.FIELD == getSymbol(variableTree).getKind();
   }
 
+  /** Matches if a {@link ClassTree} is an enum declaration. */
+  public static Matcher<ClassTree> isEnum() {
+    return (classTree, state) -> getSymbol(classTree).getKind() == ElementKind.ENUM;
+  }
+
   /**
    * Matches an class based on whether it is nested in another class or method.
    *
@@ -1240,6 +1275,47 @@ public class Matchers {
     return anyOf(matchers);
   }
 
+  private static final ImmutableSet<Kind> DECLARATION =
+      Sets.immutableEnumSet(Kind.LAMBDA_EXPRESSION, Kind.CLASS, Kind.ENUM, Kind.INTERFACE);
+
+  public static boolean methodCallInDeclarationOfThrowingRunnable(VisitorState state) {
+    return stream(state.getPath())
+        // Find the nearest definitional context for this method invocation
+        // (i.e.: the nearest surrounding class or lambda)
+        .filter(t -> DECLARATION.contains(t.getKind()))
+        .findFirst()
+        .map(t -> isThrowingFunctionalInterface(getType(t), state))
+        .orElseThrow(VerifyException::new);
+  }
+
+  public static boolean isThrowingFunctionalInterface(Type clazzType, VisitorState state) {
+    return CLASSES_CONSIDERED_THROWING.get(state).stream()
+        .anyMatch(t -> isSubtype(clazzType, t, state));
+  }
+  /**
+   * {@link FunctionalInterface}s that are generally used as a lambda expression for 'a block of
+   * code that's going to fail', e.g.:
+   *
+   * <p>{@code assertThrows(FooException.class, () -> myCodeThatThrowsAnException());
+   * errorCollector.checkThrows(FooException.class, () -> myCodeThatThrowsAnException()); }
+   */
+  // TODO(glorioso): Consider a meta-annotation like @LikelyToThrow instead/in addition?
+  private static final Supplier<ImmutableSet<Type>> CLASSES_CONSIDERED_THROWING =
+      VisitorState.memoize(
+          state ->
+              Stream.of(
+                      "org.junit.function.ThrowingRunnable",
+                      "org.junit.jupiter.api.function.Executable",
+                      "org.assertj.core.api.ThrowableAssert$ThrowingCallable",
+                      "com.google.devtools.build.lib.testutil.MoreAsserts$ThrowingRunnable",
+                      "com.google.truth.ExpectFailure.AssertionCallback",
+                      "com.google.truth.ExpectFailure.DelegatedAssertionCallback",
+                      "com.google.truth.ExpectFailure.StandardSubjectBuilderCallback",
+                      "com.google.truth.ExpectFailure.SimpleSubjectBuilderCallback")
+                  .map(state::getTypeFromString)
+                  .filter(Objects::nonNull)
+                  .collect(toImmutableSet()));
+
   private static class IsDirectImplementationOf extends ChildMultiMatcher<ClassTree, Tree> {
     public IsDirectImplementationOf(Matcher<Tree> classMatcher) {
       super(MatchType.AT_LEAST_ONE, classMatcher);
@@ -1250,7 +1326,6 @@ public class Matchers {
       return classTree.getImplementsClause();
     }
   }
-
 
   /** Matches an AST node whose compilation unit's package name matches the given pattern. */
   public static <T extends Tree> Matcher<T> packageMatches(Pattern pattern) {
@@ -1386,4 +1461,10 @@ public class Matchers {
               allOf(
                   methodIsNamed("writeReplace"),
                   methodReturns(typeFromString("java.lang.Object")))));
+
+  public static final Matcher<Tree> IS_INTERFACE =
+      (t, s) -> {
+        Symbol symbol = getSymbol(t);
+        return symbol instanceof ClassSymbol && symbol.isInterface();
+      };
 }

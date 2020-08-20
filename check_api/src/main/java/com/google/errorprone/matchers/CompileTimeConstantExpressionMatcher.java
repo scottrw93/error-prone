@@ -17,6 +17,8 @@
 package com.google.errorprone.matchers;
 
 import static com.google.common.base.MoreObjects.firstNonNull;
+import static com.google.errorprone.matchers.Matchers.anyOf;
+import static com.google.errorprone.matchers.method.MethodMatchers.staticMethod;
 import static com.google.errorprone.util.ASTHelpers.isConsideredFinal;
 
 import com.google.errorprone.VisitorState;
@@ -24,6 +26,7 @@ import com.google.errorprone.annotations.CompileTimeConstant;
 import com.google.errorprone.util.ASTHelpers;
 import com.sun.source.tree.ConditionalExpressionTree;
 import com.sun.source.tree.ExpressionTree;
+import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.util.SimpleTreeVisitor;
 import com.sun.tools.javac.code.Symbol;
@@ -63,6 +66,11 @@ public class CompileTimeConstantExpressionMatcher implements Matcher<ExpressionT
   // TODO(xtof): Perhaps some of these matchers could be generally useful, in which case they should
   // be moved into c.g.errorprone.matchers.
 
+  private static final Matcher<ExpressionTree> IMMUTABLE_FACTORY =
+      anyOf(
+          staticMethod().onClass("com.google.common.collect.ImmutableList").named("of"),
+          staticMethod().onClass("com.google.common.collect.ImmutableSet").named("of"));
+
   /**
    * A matcher for {@link ExpressionTree}s for which the java compiler can compute a constant value
    * (except a literal {@code null}).
@@ -83,7 +91,20 @@ public class CompileTimeConstantExpressionMatcher implements Matcher<ExpressionT
                 }
 
                 @Override
-                protected Boolean defaultAction(Tree node, Void aVoid) {
+                public Boolean visitMethodInvocation(MethodInvocationTree node, Void unused) {
+                  if (!IMMUTABLE_FACTORY.matches(node, state)) {
+                    return false;
+                  }
+                  for (ExpressionTree argument : node.getArguments()) {
+                    if (!argument.accept(this, null)) {
+                      return false;
+                    }
+                  }
+                  return true;
+                }
+
+                @Override
+                protected Boolean defaultAction(Tree node, Void unused) {
                   Object constValue = ASTHelpers.constValue(node);
                   return constValue != null;
                 }

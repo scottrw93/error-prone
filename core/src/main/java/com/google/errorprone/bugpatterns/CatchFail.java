@@ -17,18 +17,19 @@
 package com.google.errorprone.bugpatterns;
 
 import static com.google.common.collect.ImmutableList.toImmutableList;
+import static com.google.common.collect.Iterables.getLast;
 import static com.google.common.collect.Iterables.getOnlyElement;
 import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
 import static com.google.errorprone.matchers.Description.NO_MATCH;
 import static com.google.errorprone.matchers.Matchers.anyOf;
 import static com.google.errorprone.matchers.Matchers.expressionStatement;
 import static com.google.errorprone.matchers.method.MethodMatchers.staticMethod;
+import static com.google.errorprone.util.ASTHelpers.getStartPosition;
 import static java.util.stream.Collectors.joining;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 import com.google.errorprone.BugPattern;
-import com.google.errorprone.BugPattern.ProvidesFix;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.bugpatterns.BugChecker.TryTreeMatcher;
 import com.google.errorprone.fixes.Fix;
@@ -55,7 +56,6 @@ import com.sun.tools.javac.code.Symbol.VarSymbol;
 import com.sun.tools.javac.code.Type;
 import com.sun.tools.javac.code.Type.UnionClassType;
 import com.sun.tools.javac.code.Types;
-import com.sun.tools.javac.tree.JCTree;
 import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
@@ -67,8 +67,7 @@ import java.util.stream.Stream;
     name = "CatchFail",
     summary =
         "Ignoring exceptions and calling fail() is unnecessary, and makes test output less useful",
-    severity = WARNING,
-    providesFix = ProvidesFix.REQUIRES_HUMAN_ATTENTION)
+    severity = WARNING)
 public class CatchFail extends BugChecker implements TryTreeMatcher {
 
   public static final Matcher<ExpressionTree> ASSERT_WITH_MESSAGE =
@@ -110,8 +109,8 @@ public class CatchFail extends BugChecker implements TryTreeMatcher {
           + state
               .getSourceCode()
               .subSequence(
-                  ((JCTree) tree.getArguments().get(0)).getStartPosition(),
-                  state.getEndPosition(Iterables.getLast(tree.getArguments())))
+                  getStartPosition(tree.getArguments().get(0)),
+                  state.getEndPosition(getLast(tree.getArguments())))
           + ")";
     }
     return state.getSourceForNode(getOnlyElement(tree.getArguments()));
@@ -170,8 +169,8 @@ public class CatchFail extends BugChecker implements TryTreeMatcher {
         fix.replace(
             tree,
             source.substring(
-                ((JCTree) tryStatements.get(0)).getStartPosition(),
-                state.getEndPosition(Iterables.getLast(tryStatements))));
+                getStartPosition(tryStatements.get(0)),
+                state.getEndPosition(getLast(tryStatements))));
       }
     }
     MethodTree enclosing = findEnclosing(state.getPath());
@@ -239,11 +238,11 @@ public class CatchFail extends BugChecker implements TryTreeMatcher {
         .accept(
             new TreeScanner<Void, Void>() {
               @Override
-              public Void visitIdentifier(IdentifierTree node, Void aVoid) {
+              public Void visitIdentifier(IdentifierTree node, Void unused) {
                 if (Objects.equals(sym, ASTHelpers.getSymbol(node))) {
                   found[0] = true;
                 }
-                return super.visitIdentifier(node, aVoid);
+                return super.visitIdentifier(node, unused);
               }
             },
             null);

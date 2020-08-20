@@ -16,6 +16,8 @@
 
 package com.google.errorprone.util;
 
+import static com.google.common.collect.ImmutableList.toImmutableList;
+import static com.google.common.collect.ImmutableSet.toImmutableSet;
 import static com.google.errorprone.util.ASTHelpers.isConsideredFinal;
 
 import com.google.common.collect.ImmutableList;
@@ -59,16 +61,15 @@ import com.sun.tools.javac.comp.MemberEnter;
 import com.sun.tools.javac.comp.Resolve;
 import com.sun.tools.javac.tree.JCTree.JCCompilationUnit;
 import com.sun.tools.javac.tree.JCTree.JCMethodDecl;
+import com.sun.tools.javac.util.JCDiagnostic.DiagnosticPosition;
 import com.sun.tools.javac.util.Name;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.util.ArrayList;
 import java.util.Collections;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.BiPredicate;
-import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 import javax.annotation.Nullable;
 import javax.lang.model.element.ElementKind;
@@ -85,25 +86,60 @@ public final class FindIdentifiers {
   /** Finds a declaration with the given name and type that is in scope at the current location. */
   @Nullable
   public static Symbol findIdent(String name, VisitorState state, KindSelector kind) {
-    ClassType enclosingClass = ASTHelpers.getType(state.findEnclosing(ClassTree.class));
+    ClassType enclosingClass = ASTHelpers.getType(getEnclosingClass(state.getPath()));
+    Env<AttrContext> env;
     if (enclosingClass == null || enclosingClass.tsym == null) {
-      return null;
-    }
-    Env<AttrContext> env = Enter.instance(state.context).getClassEnv(enclosingClass.tsym);
-    MethodTree enclosingMethod = state.findEnclosing(MethodTree.class);
-    if (enclosingMethod != null) {
-      env = MemberEnter.instance(state.context).getMethodEnv((JCMethodDecl) enclosingMethod, env);
+      env =
+          Enter.instance(state.context)
+              .getTopLevelEnv((JCCompilationUnit) state.getPath().getCompilationUnit());
+    } else {
+      env = Enter.instance(state.context).getClassEnv(enclosingClass.tsym);
+      MethodTree enclosingMethod = state.findEnclosing(MethodTree.class);
+      if (enclosingMethod != null) {
+        env = MemberEnter.instance(state.context).getMethodEnv((JCMethodDecl) enclosingMethod, env);
+      }
     }
     try {
-      Method method =
-          Resolve.class.getDeclaredMethod("findIdent", Env.class, Name.class, KindSelector.class);
-      method.setAccessible(true);
-      Symbol result =
-          (Symbol) method.invoke(Resolve.instance(state.context), env, state.getName(name), kind);
+      Symbol result = findIdent(name, state, kind, env);
       return result.exists() ? result : null;
     } catch (ReflectiveOperationException e) {
       throw new LinkageError(e.getMessage(), e);
     }
+  }
+
+  // Signature was changed in Java 13: https://bugs.openjdk.java.net/browse/JDK-8223305
+  private static Symbol findIdent(
+      String name, VisitorState state, KindSelector kind, Env<AttrContext> env)
+      throws NoSuchMethodException, IllegalAccessException, InvocationTargetException {
+    if (RuntimeVersion.isAtLeast13()) {
+      Method method =
+          Resolve.class.getDeclaredMethod(
+              "findIdent", DiagnosticPosition.class, Env.class, Name.class, KindSelector.class);
+      method.setAccessible(true);
+      return (Symbol)
+          method.invoke(Resolve.instance(state.context), null, env, state.getName(name), kind);
+    }
+    Method method =
+        Resolve.class.getDeclaredMethod("findIdent", Env.class, Name.class, KindSelector.class);
+    method.setAccessible(true);
+    return (Symbol) method.invoke(Resolve.instance(state.context), env, state.getName(name), kind);
+  }
+
+  @Nullable
+  private static ClassTree getEnclosingClass(TreePath treePath) {
+    while (treePath != null) {
+      TreePath parent = treePath.getParentPath();
+      if (parent == null) {
+        return null;
+      }
+      Tree leaf = parent.getLeaf();
+      if (leaf instanceof ClassTree
+          && ((ClassTree) leaf).getMembers().contains(treePath.getLeaf())) {
+        return (ClassTree) leaf;
+      }
+      treePath = parent;
+    }
+    return null;
   }
 
   /**
@@ -116,7 +152,7 @@ public final class FindIdentifiers {
    * <p>We do not report variables that would require a qualified access. We also do not handle
    * wildcard imports.
    */
-  public static LinkedHashSet<VarSymbol> findAllIdents(VisitorState state) {
+  public static ImmutableSet<VarSymbol> findAllIdents(VisitorState state) {
     ImmutableSet.Builder<VarSymbol> result = new ImmutableSet.Builder<>();
     Tree prev = state.getPath().getLeaf();
     for (Tree curr : state.getPath().getParentPath()) {
@@ -225,10 +261,9 @@ public final class FindIdentifiers {
       prev = curr;
     }
 
-    // TODO(eaftan): switch out collector for ImmutableSet.toImmutableSet()
     return result.build().stream()
-        .filter(var -> isVisible(var, state.getPath()))
-        .collect(Collectors.toCollection(LinkedHashSet::new));
+        .filter(variable -> isVisible(variable, state.getPath()))
+        .collect(toImmutableSet());
   }
 
   /**
@@ -277,8 +312,7 @@ public final class FindIdentifiers {
   }
 
   /** Finds all the visible fields declared or inherited in the target class */
-  public static List<VarSymbol> findAllFields(Type classType, VisitorState state) {
-    // TODO(andrewrice): Switch collector to ImmutableList.toImmutableList() when released
+  public static ImmutableList<VarSymbol> findAllFields(Type classType, VisitorState state) {
     return state.getTypes().closure(classType).stream()
         .flatMap(
             type -> {
@@ -296,14 +330,14 @@ public final class FindIdentifiers {
                   .map(v -> (VarSymbol) v)
                   .filter(v -> isVisible(v, state.getPath()));
             })
-        .collect(Collectors.toCollection(ArrayList::new));
+        .collect(toImmutableList());
   }
 
   /**
    * Finds all identifiers in a tree. Takes an optional stop point as its argument: the depth-first
    * walk will stop if this node is encountered.
    */
-  private static final TreeScanner<Void, Void> createFindIdentifiersScanner(
+  private static TreeScanner<Void, Void> createFindIdentifiersScanner(
       ImmutableSet.Builder<Symbol> builder, @Nullable Tree stoppingPoint) {
     return new TreeScanner<Void, Void>() {
       @Override
@@ -341,13 +375,12 @@ public final class FindIdentifiers {
     switch (var.getKind()) {
       case ENUM_CONSTANT:
       case FIELD:
-        // TODO(eaftan): Switch collector to ImmutableList.toImmutableList() when released
-        List<ClassSymbol> enclosingClasses =
+        ImmutableList<ClassSymbol> enclosingClasses =
             StreamSupport.stream(path.spliterator(), false)
-                .filter(tree -> tree instanceof ClassTree)
+                .filter(ClassTree.class::isInstance)
                 .map(ClassTree.class::cast)
                 .map(ASTHelpers::getSymbol)
-                .collect(Collectors.toCollection(ArrayList::new));
+                .collect(toImmutableList());
 
         if (!var.isStatic()) {
           // Instance fields are not visible if we are in a static context...

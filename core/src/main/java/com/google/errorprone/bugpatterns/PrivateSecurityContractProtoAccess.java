@@ -59,12 +59,11 @@ public class PrivateSecurityContractProtoAccess extends BugChecker
               createFieldMatcher("com.google.common.html.types.SafeStyleSheetProto")),
           not(packageStartsWith("com.google.common.html.types")));
 
-
   private static final String MESSAGE = "Forbidden access to a private proto field. See ";
   private static final String SAFEHTML_LINK = "https://github.com/google/safe-html-types/blob/master/doc/safehtml-types.md#protocol-buffer-conversion";
 
   // Matches instance methods with PrivateDoNotAccessOrElse in their names.
-  private static final Matcher<MethodInvocationTree> createFieldMatcher(String className) {
+  private static Matcher<MethodInvocationTree> createFieldMatcher(String className) {
     String builderName = className + ".Builder";
     return anyOf(
         instanceMethod().onExactClass(className).withNameMatching(PRIVATE_DO_NOT_ACCESS_OR_ELSE),

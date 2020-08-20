@@ -20,7 +20,6 @@ import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
 import static com.google.errorprone.matchers.Matchers.instanceMethod;
 
 import com.google.errorprone.BugPattern;
-import com.google.errorprone.BugPattern.ProvidesFix;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.bugpatterns.BugChecker.MethodInvocationTreeMatcher;
 import com.google.errorprone.fixes.SuggestedFix;
@@ -37,8 +36,7 @@ import com.sun.source.util.TreePath;
     name = "MultipleParallelOrSequentialCalls",
     summary =
         "Multiple calls to either parallel or sequential are unnecessary and cause confusion.",
-    severity = WARNING,
-    providesFix = ProvidesFix.REQUIRES_HUMAN_ATTENTION)
+    severity = WARNING)
 public class MultipleParallelOrSequentialCalls extends BugChecker
     implements MethodInvocationTreeMatcher {
 
@@ -64,8 +62,8 @@ public class MultipleParallelOrSequentialCalls extends BugChecker
         MethodInvocationTree methodInvocationTree = (MethodInvocationTree) pathToMet.getLeaf();
         // this check makes it so that we stop iterating up once it's done
         if (methodInvocationTree.getArguments().stream()
-            .map(m -> m.toString())
-            .anyMatch(m -> m.contains(t.toString()))) {
+            .map(m -> state.getSourceForNode(m))
+            .anyMatch(m -> m.contains(state.getSourceForNode(t)))) {
           break;
         }
         if (methodInvocationTree.getMethodSelect() instanceof MemberSelectTree) {

@@ -17,7 +17,6 @@
 package com.google.errorprone.bugpatterns.formatstring;
 
 import com.google.errorprone.CompilationTestHelper;
-import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -26,13 +25,8 @@ import org.junit.runners.JUnit4;
 @RunWith(JUnit4.class)
 public class FormatStringAnnotationCheckerTest {
 
-  private CompilationTestHelper compilationHelper;
-
-  @Before
-  public void setUp() {
-    compilationHelper =
-        CompilationTestHelper.newInstance(FormatStringAnnotationChecker.class, getClass());
-  }
+  private final CompilationTestHelper compilationHelper =
+      CompilationTestHelper.newInstance(FormatStringAnnotationChecker.class, getClass());
 
   @Test
   public void testMatches_failsWithNonMatchingFormatArgs() {
@@ -286,8 +280,8 @@ public class FormatStringAnnotationCheckerTest {
         .addSourceLines(
             "test/FormatStringTestCase.java",
             "package test;",
-            "import static org.mockito.Matchers.any;",
-            "import static org.mockito.Matchers.eq;",
+            "import static org.mockito.ArgumentMatchers.any;",
+            "import static org.mockito.ArgumentMatchers.eq;",
             "import static org.mockito.Mockito.verify;",
             "import com.google.errorprone.annotations.FormatMethod;",
             "import com.google.errorprone.annotations.FormatString;",

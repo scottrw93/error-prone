@@ -63,7 +63,6 @@ public final class StronglyTypeTimeTest {
         .doTest();
   }
 
-
   @Test
   public void jodaInstant() {
     refactoringHelper
@@ -240,6 +239,69 @@ public final class StronglyTypeTimeTest {
             "  final long FOO_MILLIS = 100;",
             "  public Duration get() {",
             "    return Duration.ofMillis(FOO_MILLIS);",
+            "  }",
+            "}")
+        .doTest();
+  }
+
+  @Test
+  public void unusedField_noMatch() {
+    compilationHelper
+        .addSourceLines(
+            "Test.java",
+            "import java.io.Serializable;",
+            "class Test implements Serializable {",
+            "  private static final long serialVersionUID = 1L;",
+            "}")
+        .expectNoDiagnostics()
+        .doTest();
+  }
+
+  @Test
+  public void whenJodaAndJavaInstantUsed_fullyQualifiesName() {
+    refactoringHelper
+        .addInputLines(
+            "Test.java",
+            "import java.time.Instant;",
+            "class Test {",
+            "  private static final long FOO_MILLIS = 100L;",
+            "  private static final Instant INSTANT = null;",
+            "  public org.joda.time.Instant get() {",
+            "    return new org.joda.time.Instant(FOO_MILLIS);",
+            "  }",
+            "}")
+        .addOutputLines(
+            "Test.java",
+            "import java.time.Instant;",
+            "class Test {",
+            "  private static final org.joda.time.Instant FOO = new org.joda.time.Instant(100L);",
+            "  private static final Instant INSTANT = null;",
+            "  public org.joda.time.Instant get() {",
+            "    return FOO;",
+            "  }",
+            "}")
+        .doTest();
+  }
+
+  @Test
+  public void milliseconds() {
+    refactoringHelper
+        .addInputLines(
+            "Test.java",
+            "import java.time.Duration;",
+            "class Test {",
+            "  private static final long F1_RETRY_MILLISECONDS = 5000;",
+            "  public Duration frobber() {",
+            "    return Duration.ofMillis(F1_RETRY_MILLISECONDS);",
+            "  }",
+            "}")
+        .addOutputLines(
+            "Test.java",
+            "import java.time.Duration;",
+            "class Test {",
+            "  private static final Duration F1_RETRY = Duration.ofMillis(5000);",
+            "  public Duration frobber() {",
+            "    return F1_RETRY;",
             "  }",
             "}")
         .doTest();

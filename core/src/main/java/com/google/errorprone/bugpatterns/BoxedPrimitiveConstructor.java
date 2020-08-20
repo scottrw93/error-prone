@@ -20,11 +20,11 @@ import static com.google.common.collect.Iterables.getOnlyElement;
 import static com.google.errorprone.matchers.Description.NO_MATCH;
 import static com.google.errorprone.matchers.Matchers.toType;
 import static com.google.errorprone.matchers.method.MethodMatchers.instanceMethod;
+import static com.google.errorprone.util.ASTHelpers.getStartPosition;
 import static com.google.errorprone.util.ASTHelpers.getType;
 import static com.google.errorprone.util.ASTHelpers.isSameType;
 
 import com.google.errorprone.BugPattern;
-import com.google.errorprone.BugPattern.ProvidesFix;
 import com.google.errorprone.BugPattern.SeverityLevel;
 import com.google.errorprone.BugPattern.StandardTags;
 import com.google.errorprone.VisitorState;
@@ -52,8 +52,7 @@ import com.sun.tools.javac.util.Context;
     name = "BoxedPrimitiveConstructor",
     summary = "valueOf or autoboxing provides better time and space performance",
     severity = SeverityLevel.WARNING,
-    tags = StandardTags.PERFORMANCE,
-    providesFix = ProvidesFix.REQUIRES_HUMAN_ATTENTION)
+    tags = StandardTags.PERFORMANCE)
 public class BoxedPrimitiveConstructor extends BugChecker implements NewClassTreeMatcher {
 
   private static final Matcher<Tree> TO_STRING =
@@ -108,10 +107,7 @@ public class BoxedPrimitiveConstructor extends BugChecker implements NewClassTre
     Type argType = getType(arg);
     if (autoboxFix && argType.isPrimitive()) {
       return SuggestedFix.builder()
-          .replace(
-              ((JCTree) tree).getStartPosition(),
-              arg.getStartPosition(),
-              maybeCast(state, type, argType))
+          .replace(getStartPosition(tree), arg.getStartPosition(), maybeCast(state, type, argType))
           .replace(state.getEndPosition(arg), state.getEndPosition(tree), "")
           .build();
     }
@@ -215,7 +211,7 @@ public class BoxedPrimitiveConstructor extends BugChecker implements NewClassTre
     }
 
     return SuggestedFix.builder()
-        .replace(((JCTree) tree).getStartPosition(), arg.getStartPosition(), prefixToArg)
+        .replace(getStartPosition(tree), arg.getStartPosition(), prefixToArg)
         .postfixWith(arg, suffix)
         .build();
   }

@@ -5,7 +5,9 @@ dist: trusty
 jdk:
   - oraclejdk8
   - oraclejdk9
-  - openjdk11
+  - openjdk12
+  - openjdk13
+  - openjdk14
   - openjdk-ea
 
 matrix:
@@ -15,6 +17,12 @@ matrix:
         # https://github.com/travis-ci/travis-ci/issues/9368#issuecomment-395354755
         - rm "${JAVA_HOME}/lib/security/cacerts"
         - ln -s /etc/ssl/certs/java/cacerts "${JAVA_HOME}/lib/security/cacerts"
+    - jdk: openjdk11
+      script:
+        # default Maven command
+        - mvn test -B
+        # also test Javadoc generation
+        - mvn -P '!examples' javadoc:aggregate
   allow_failures:
     - jdk: openjdk-ea
 
@@ -51,3 +59,9 @@ env:
 after_success:
   - util/publish-snapshot-on-commit.sh
   - util/generate-latest-docs.sh
+
+# https://docs.travis-ci.com/user/web-ui/#build-pushed-branches
+# safelist
+branches:
+  only:
+  - master

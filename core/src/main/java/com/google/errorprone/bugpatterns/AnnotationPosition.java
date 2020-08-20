@@ -24,6 +24,7 @@ import static com.google.errorprone.BugPattern.LinkType.CUSTOM;
 import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
 import static com.google.errorprone.BugPattern.StandardTags.STYLE;
 import static com.google.errorprone.matchers.Description.NO_MATCH;
+import static com.google.errorprone.util.ASTHelpers.getStartPosition;
 import static com.google.errorprone.util.ASTHelpers.getSymbol;
 import static java.util.stream.Collectors.joining;
 
@@ -31,7 +32,6 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.errorprone.BugPattern;
-import com.google.errorprone.BugPattern.ProvidesFix;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.bugpatterns.BugChecker.ClassTreeMatcher;
 import com.google.errorprone.bugpatterns.BugChecker.MethodTreeMatcher;
@@ -50,7 +50,6 @@ import com.sun.tools.javac.code.Symbol;
 import com.sun.tools.javac.code.TypeAnnotations.AnnotationType;
 import com.sun.tools.javac.parser.Tokens.Comment;
 import com.sun.tools.javac.parser.Tokens.TokenKind;
-import com.sun.tools.javac.tree.JCTree;
 import com.sun.tools.javac.tree.JCTree.JCClassDecl;
 import com.sun.tools.javac.tree.JCTree.JCMethodDecl;
 import com.sun.tools.javac.tree.JCTree.JCVariableDecl;
@@ -74,8 +73,8 @@ import javax.lang.model.element.Name;
     severity = WARNING,
     tags = STYLE,
     linkType = CUSTOM,
-    link = "https://google.github.io/styleguide/javaguide.html#s4.8.5-annotations",
-    providesFix = ProvidesFix.REQUIRES_HUMAN_ATTENTION)
+    link = "https://google.github.io/styleguide/javaguide.html#s4.8.5-annotations"
+    )
 public final class AnnotationPosition extends BugChecker
     implements ClassTreeMatcher, MethodTreeMatcher, VariableTreeMatcher {
 
@@ -112,7 +111,7 @@ public final class AnnotationPosition extends BugChecker
       return NO_MATCH;
     }
 
-    int treePos = ((JCTree) tree).getStartPosition();
+    int treePos = getStartPosition(tree);
     List<ErrorProneToken> tokens = annotationTokens(tree, state, treePos);
     Comment danglingJavadoc = findOrphanedJavadoc(name, tokens);
 
@@ -148,10 +147,13 @@ public final class AnnotationPosition extends BugChecker
     int endPos;
     if (tree instanceof JCMethodDecl) {
       JCMethodDecl methodTree = (JCMethodDecl) tree;
-      endPos =
-          methodTree.getBody() == null
-              ? state.getEndPosition(methodTree)
-              : methodTree.getBody().getStartPosition();
+      if (!methodTree.getParameters().isEmpty()) {
+        endPos = methodTree.getParameters().get(0).getStartPosition();
+      } else if (methodTree.getBody() == null) {
+        endPos = state.getEndPosition(methodTree);
+      } else {
+        endPos = methodTree.getBody().getStartPosition();
+      }
     } else if (tree instanceof JCVariableDecl) {
       endPos = ((JCVariableDecl) tree).getType().getStartPosition();
     } else if (tree instanceof JCClassDecl) {
@@ -180,7 +182,7 @@ public final class AnnotationPosition extends BugChecker
 
     boolean annotationProblem = false;
     for (AnnotationTree annotation : annotations) {
-      int annotationPos = ((JCTree) annotation).getStartPosition();
+      int annotationPos = getStartPosition(annotation);
       if (annotationPos <= firstModifierPos) {
         continue;
       }
@@ -202,37 +204,55 @@ public final class AnnotationPosition extends BugChecker
         }
       }
     }
-    if (annotationProblem) {
-      for (AnnotationTree annotation : moveBefore) {
-        builder.delete(annotation);
-      }
-      for (AnnotationTree annotation : moveAfter) {
-        builder.delete(annotation);
-      }
-      String javadoc =
-          danglingJavadoc == null ? "" : removeJavadoc(state, danglingJavadoc, builder);
-      builder
-          .replace(
-              firstModifierPos,
-              firstModifierPos,
-              String.format("%s%s ", javadoc, joinSource(state, moveBefore)))
-          .replace(
-              lastModifierPos, lastModifierPos, String.format("%s ", joinSource(state, moveAfter)));
-      ImmutableList<String> names =
-          annotations.stream()
-              .map(ASTHelpers::getSymbol)
-              .filter(Objects::nonNull)
-              .map(Symbol::getSimpleName)
-              .map(a -> "@" + a)
-              .collect(toImmutableList());
-      String flattened = names.stream().collect(joining(", "));
-      String isAre = names.size() > 1 ? "are not type annotations" : "is not a type annotation";
-      String message =
-          String.format(
-              "%s %s, so should appear before any modifiers and after Javadocs.", flattened, isAre);
-      return buildDescription(tree).setMessage(message).addFix(builder.build()).build();
+    if (!annotationProblem) {
+      return NO_MATCH;
     }
-    return NO_MATCH;
+    for (AnnotationTree annotation : moveBefore) {
+      builder.delete(annotation);
+    }
+    for (AnnotationTree annotation : moveAfter) {
+      builder.delete(annotation);
+    }
+    String javadoc = danglingJavadoc == null ? "" : removeJavadoc(state, danglingJavadoc, builder);
+    builder
+        .replace(
+            firstModifierPos,
+            firstModifierPos,
+            String.format("%s%s ", javadoc, joinSource(state, moveBefore)))
+        .replace(
+            lastModifierPos, lastModifierPos, String.format("%s ", joinSource(state, moveAfter)));
+    List<String> messages = new ArrayList<>();
+    if (!moveBefore.isEmpty()) {
+      ImmutableList<String> names = annotationNames(moveBefore);
+      String flattened = String.join(", ", names);
+      String isAre =
+          names.size() > 1 ? "are not TYPE_USE annotations" : "is not a TYPE_USE annotation";
+      messages.add(
+          String.format(
+              "%s %s, so should appear before any modifiers and after Javadocs.",
+              flattened, isAre));
+    }
+    if (!moveAfter.isEmpty()) {
+      ImmutableList<String> names = annotationNames(moveAfter);
+      String flattened = String.join(", ", names);
+      String isAre = names.size() > 1 ? "are TYPE_USE annotations" : "is a TYPE_USE annotation";
+      messages.add(
+          String.format(
+              "%s %s, so can appear after modifiers and before the type.", flattened, isAre));
+    }
+    return buildDescription(tree)
+        .setMessage(String.join(" ", messages))
+        .addFix(builder.build())
+        .build();
+  }
+
+  private ImmutableList<String> annotationNames(List<AnnotationTree> annotations) {
+    return annotations.stream()
+        .map(ASTHelpers::getSymbol)
+        .filter(Objects::nonNull)
+        .map(Symbol::getSimpleName)
+        .map(a -> "@" + a)
+        .collect(toImmutableList());
   }
 
   private static String joinSource(VisitorState state, List<AnnotationTree> moveBefore) {

@@ -47,7 +47,6 @@ public final class WellKnownMutability implements ThreadSafety.KnownTypes {
   /** Types that are known to be mutable. */
   private final ImmutableSet<String> knownUnsafeClasses;
 
-
   private WellKnownMutability(List<String> knownImmutable, List<String> knownUnsafe) {
     knownImmutableClasses = buildImmutableClasses(knownImmutable);
     knownUnsafeClasses = buildUnsafeClasses(knownUnsafe);
@@ -128,6 +127,7 @@ public final class WellKnownMutability implements ThreadSafety.KnownTypes {
         .addStrings(extraKnownImmutables)
         .addClasses(Primitives.allPrimitiveTypes())
         .addClasses(Primitives.allWrapperTypes())
+        .add("com.github.zafarkhaja.semver.Version")
         .add("com.google.protobuf.ByteString")
         .add("com.google.protobuf.Descriptors$Descriptor")
         .add("com.google.protobuf.Descriptors$EnumDescriptor")
@@ -189,6 +189,7 @@ public final class WellKnownMutability implements ThreadSafety.KnownTypes {
         .add(java.math.BigInteger.class)
         .add(java.net.InetAddress.class)
         .add(java.net.URI.class)
+        .add(java.nio.ByteOrder.class)
         .add(java.nio.charset.Charset.class)
         .add(java.nio.file.Path.class)
         .add(java.nio.file.WatchEvent.class)

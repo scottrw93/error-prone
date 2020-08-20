@@ -23,7 +23,6 @@ import static com.sun.source.tree.Tree.Kind.STRING_LITERAL;
 
 import com.google.common.collect.ImmutableSet;
 import com.google.errorprone.BugPattern;
-import com.google.errorprone.BugPattern.ProvidesFix;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.bugpatterns.BugChecker;
 import com.google.errorprone.bugpatterns.BugChecker.MethodInvocationTreeMatcher;
@@ -46,7 +45,6 @@ import com.sun.source.util.TreePath;
 import com.sun.source.util.TreeScanner;
 import com.sun.tools.javac.code.Symbol;
 import com.sun.tools.javac.code.Symbol.VarSymbol;
-import com.sun.tools.javac.tree.JCTree.JCExpression;
 import com.sun.tools.javac.tree.JCTree.JCIdent;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -63,8 +61,7 @@ import java.util.Set;
     name = "UnnecessaryCheckNotNull",
     summary = "This null check is unnecessary; the expression can never be null",
     severity = ERROR,
-    altNames = {"PreconditionsCheckNotNull", "PreconditionsCheckNotNullPrimitive"},
-    providesFix = ProvidesFix.REQUIRES_HUMAN_ATTENTION)
+    altNames = {"PreconditionsCheckNotNull", "PreconditionsCheckNotNullPrimitive"})
 public class UnnecessaryCheckNotNull extends BugChecker implements MethodInvocationTreeMatcher {
 
   private static final Matcher<MethodInvocationTree> CHECK_NOT_NULL_MATCHER =
@@ -161,7 +158,7 @@ public class UnnecessaryCheckNotNull extends BugChecker implements MethodInvocat
     if ((arg1 instanceof BinaryTree
             || arg1.getKind() == Kind.METHOD_INVOCATION
             || arg1.getKind() == Kind.LOGICAL_COMPLEMENT)
-        && state.getTypes().isSameType(((JCExpression) arg1).type, state.getSymtab().booleanType)) {
+        && state.getTypes().isSameType(ASTHelpers.getType(arg1), state.getSymtab().booleanType)) {
       return describeMatch(arg1, createCheckArgumentOrStateCall(methodInvocationTree, state, arg1));
     }
 

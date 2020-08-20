@@ -22,13 +22,13 @@ import static com.google.errorprone.matchers.Matchers.anyOf;
 import static com.google.errorprone.matchers.Matchers.kindIs;
 
 import com.google.errorprone.BugPattern;
-import com.google.errorprone.BugPattern.ProvidesFix;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.bugpatterns.BugChecker.BinaryTreeMatcher;
 import com.google.errorprone.fixes.Fix;
 import com.google.errorprone.fixes.SuggestedFix;
 import com.google.errorprone.matchers.Description;
 import com.google.errorprone.matchers.Matcher;
+import com.google.errorprone.util.ASTHelpers;
 import com.sun.source.tree.BinaryTree;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.LiteralTree;
@@ -36,7 +36,6 @@ import com.sun.source.tree.Tree.Kind;
 import com.sun.tools.javac.code.Symtab;
 import com.sun.tools.javac.code.Type;
 import com.sun.tools.javac.code.Types;
-import com.sun.tools.javac.tree.JCTree;
 
 /**
  * @author bill.pugh@gmail.com (Bill Pugh)
@@ -45,8 +44,7 @@ import com.sun.tools.javac.tree.JCTree;
 @BugPattern(
     name = "BadShiftAmount",
     summary = "Shift by an amount that is out of range",
-    severity = ERROR,
-    providesFix = ProvidesFix.REQUIRES_HUMAN_ATTENTION)
+    severity = ERROR)
 public class BadShiftAmount extends BugChecker implements BinaryTreeMatcher {
 
   /**
@@ -60,7 +58,7 @@ public class BadShiftAmount extends BugChecker implements BinaryTreeMatcher {
       new Matcher<BinaryTree>() {
         @Override
         public boolean matches(BinaryTree tree, VisitorState state) {
-          Type leftType = ((JCTree) tree.getLeftOperand()).type;
+          Type leftType = ASTHelpers.getType(tree.getLeftOperand());
           Types types = state.getTypes();
           Symtab symtab = state.getSymtab();
           if (!(types.isSameType(leftType, symtab.intType))

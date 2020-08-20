@@ -15,12 +15,12 @@
  */
 package com.google.errorprone.bugpatterns.time;
 
-import static com.google.errorprone.BugPattern.ProvidesFix.REQUIRES_HUMAN_ATTENTION;
 import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
 import static com.google.errorprone.matchers.Matchers.allOf;
 import static com.google.errorprone.matchers.Matchers.anyOf;
 import static com.google.errorprone.matchers.Matchers.not;
 import static com.google.errorprone.matchers.Matchers.packageStartsWith;
+import static com.google.errorprone.util.ASTHelpers.getStartPosition;
 
 import com.google.common.collect.Iterables;
 import com.google.errorprone.BugPattern;
@@ -33,7 +33,6 @@ import com.google.errorprone.matchers.Matcher;
 import com.google.errorprone.matchers.Matchers;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.NewClassTree;
-import com.sun.tools.javac.tree.JCTree;
 
 /** Check for calls to new Duration(long). */
 @BugPattern(
@@ -44,8 +43,7 @@ import com.sun.tools.javac.tree.JCTree;
             + "is frequently a source of bugs. Please use Duration.millis(long) instead. If your "
             + "Duration is better expressed in terms of other units, use standardSeconds(long), "
             + "standardMinutes(long), standardHours(long), or standardDays(long) instead.",
-    severity = WARNING,
-    providesFix = REQUIRES_HUMAN_ATTENTION)
+    severity = WARNING)
 public final class JodaDurationConstructor extends BugChecker implements NewClassTreeMatcher {
   private static final Matcher<ExpressionTree> MATCHER =
       allOf(
@@ -64,8 +62,8 @@ public final class JodaDurationConstructor extends BugChecker implements NewClas
     ExpressionTree millisArg = Iterables.getOnlyElement(tree.getArguments());
     SuggestedFix fix =
         SuggestedFix.replace(
-            ((JCTree) tree).getStartPosition(),
-            ((JCTree) millisArg).getStartPosition(),
+            getStartPosition(tree),
+            getStartPosition(millisArg),
             state.getSourceForNode(tree.getIdentifier()) + ".millis(");
     return describeMatch(tree, fix);
   }

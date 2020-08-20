@@ -42,6 +42,7 @@ import static com.google.errorprone.util.ASTHelpers.getSymbol;
 import static javax.lang.model.element.NestingKind.TOP_LEVEL;
 
 import com.google.errorprone.VisitorState;
+import com.google.errorprone.util.ASTHelpers;
 import com.sun.source.tree.AnnotationTree;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.ExpressionTree;
@@ -53,7 +54,6 @@ import com.sun.tools.javac.code.Symbol;
 import com.sun.tools.javac.code.Symbol.MethodSymbol;
 import com.sun.tools.javac.code.Type;
 import com.sun.tools.javac.code.Type.ClassType;
-import com.sun.tools.javac.tree.JCTree;
 import java.util.Arrays;
 import java.util.Collection;
 import javax.lang.model.element.Modifier;
@@ -66,6 +66,7 @@ import javax.lang.model.element.Modifier;
  */
 public class JUnitMatchers {
   public static final String JUNIT4_TEST_ANNOTATION = "org.junit.Test";
+  public static final String JUNIT4_THEORY_ANNOTATION = "org.junit.experimental.theories.Theory";
   public static final String JUNIT_BEFORE_ANNOTATION = "org.junit.Before";
   public static final String JUNIT_AFTER_ANNOTATION = "org.junit.After";
   public static final String JUNIT_BEFORE_CLASS_ANNOTATION = "org.junit.BeforeClass";
@@ -203,7 +204,10 @@ public class JUnitMatchers {
 
   /** Matches a JUnit 3 or 4 test case. */
   public static final Matcher<MethodTree> TEST_CASE =
-      anyOf(isJunit3TestCase, hasAnnotation(JUNIT4_TEST_ANNOTATION));
+      anyOf(
+          isJunit3TestCase,
+          hasAnnotation(JUNIT4_TEST_ANNOTATION),
+          hasAnnotation(JUNIT4_THEORY_ANNOTATION));
   /**
    * A list of test runners that this matcher should look for in the @RunWith annotation. Subclasses
    * of the test runners are also matched.
@@ -223,7 +227,7 @@ public class JUnitMatchers {
     return new Matcher<ExpressionTree>() {
       @Override
       public boolean matches(ExpressionTree t, VisitorState state) {
-        Type type = ((JCTree) t).type;
+        Type type = ASTHelpers.getType(t);
         // Expect a class type.
         if (!(type instanceof ClassType)) {
           return false;

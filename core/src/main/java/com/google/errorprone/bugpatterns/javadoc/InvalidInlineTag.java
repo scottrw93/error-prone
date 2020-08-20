@@ -17,15 +17,16 @@
 package com.google.errorprone.bugpatterns.javadoc;
 
 import static com.google.common.collect.ImmutableSet.toImmutableSet;
+import static com.google.common.collect.Iterables.getFirst;
 import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
 import static com.google.errorprone.bugpatterns.javadoc.JavadocTag.inlineTag;
 import static com.google.errorprone.bugpatterns.javadoc.Utils.diagnosticPosition;
 import static com.google.errorprone.bugpatterns.javadoc.Utils.getDiagnosticPosition;
 import static java.util.stream.Collectors.joining;
 
+import com.google.common.base.Splitter;
 import com.google.common.collect.ImmutableSet;
 import com.google.errorprone.BugPattern;
-import com.google.errorprone.BugPattern.ProvidesFix;
 import com.google.errorprone.BugPattern.StandardTags;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.bugpatterns.BugChecker;
@@ -68,7 +69,6 @@ import java.util.regex.Pattern;
     summary = "This tag is invalid.",
     severity = WARNING,
     tags = StandardTags.STYLE,
-    providesFix = ProvidesFix.REQUIRES_HUMAN_ATTENTION,
     documentSuppression = false)
 public final class InvalidInlineTag extends BugChecker
     implements ClassTreeMatcher, MethodTreeMatcher, VariableTreeMatcher {
@@ -78,6 +78,8 @@ public final class InvalidInlineTag extends BugChecker
           + "Use {@code %1%s} to refer to parameter names inline.";
 
   private static final Pattern PARAM_MATCHER = Pattern.compile("\\{?@param ([a-zA-Z0-9]+)}?");
+
+  private static final Splitter DOT_SPLITTER = Splitter.on('.');
 
   @Override
   public Description matchClass(ClassTree classTree, VisitorState state) {
@@ -206,7 +208,7 @@ public final class InvalidInlineTag extends BugChecker
                     getDiagnosticPosition(beforeAt, getCurrentPath().getTreePath().getLeaf()))
                 .setMessage(
                     String.format(
-                        "Curly braces should be used for inline Javadoc tags: {%s ...}",
+                        "Curly braces should be used for inline Javadoc tags: {@%s ...}",
                         matcher.group(1)))
                 .addFix(fix.build())
                 .build());
@@ -286,7 +288,9 @@ public final class InvalidInlineTag extends BugChecker
     }
 
     private boolean isProbablyType(String name) {
-      Symbol typeSymbol = FindIdentifiers.findIdent(name, state, KindSelector.TYP);
+      Symbol typeSymbol =
+          FindIdentifiers.findIdent(
+              getFirst(DOT_SPLITTER.split(name), null), state, KindSelector.TYP);
       return typeSymbol instanceof TypeSymbol
           || name.chars().filter(c -> c == '.').count() >= 3
           || name.contains("#");

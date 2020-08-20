@@ -24,18 +24,17 @@ import static com.google.errorprone.matchers.Matchers.toType;
 import static com.google.errorprone.matchers.method.MethodMatchers.constructor;
 import static com.google.errorprone.matchers.method.MethodMatchers.instanceMethod;
 import static com.google.errorprone.matchers.method.MethodMatchers.staticMethod;
+import static com.google.errorprone.util.ASTHelpers.getStartPosition;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 import com.google.errorprone.BugPattern;
-import com.google.errorprone.BugPattern.ProvidesFix;
 import com.google.errorprone.BugPattern.StandardTags;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.bugpatterns.BugChecker.MethodInvocationTreeMatcher;
 import com.google.errorprone.bugpatterns.BugChecker.NewClassTreeMatcher;
 import com.google.errorprone.fixes.Fix;
 import com.google.errorprone.fixes.SuggestedFix;
-import com.google.errorprone.fixes.SuggestedFix.Builder;
 import com.google.errorprone.matchers.Description;
 import com.google.errorprone.matchers.Matcher;
 import com.google.errorprone.suppliers.Suppliers;
@@ -50,7 +49,6 @@ import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreeScanner;
 import com.sun.tools.javac.code.Symbol;
 import com.sun.tools.javac.code.Type;
-import com.sun.tools.javac.tree.JCTree;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
@@ -77,19 +75,18 @@ import java.util.Scanner;
             + " between JVM executions or incorrect behavior if the encoding of the data source"
             + " doesn't match expectations.",
     severity = WARNING,
-    tags = StandardTags.FRAGILE_CODE,
-    providesFix = ProvidesFix.REQUIRES_HUMAN_ATTENTION)
+    tags = StandardTags.FRAGILE_CODE)
 public class DefaultCharset extends BugChecker
     implements MethodInvocationTreeMatcher, NewClassTreeMatcher {
 
   enum CharsetFix {
-    UTF_8_FIX("UTF_8") {
+    UTF_8_FIX("UTF_8", "Specify UTF-8") {
       @Override
       void addImport(SuggestedFix.Builder fix, VisitorState state) {
         fix.addStaticImport("java.nio.charset.StandardCharsets.UTF_8");
       }
     },
-    DEFAULT_CHARSET_FIX("Charset.defaultCharset()") {
+    DEFAULT_CHARSET_FIX("Charset.defaultCharset()", "Specify default charset") {
       @Override
       void addImport(SuggestedFix.Builder fix, VisitorState state) {
         fix.addImport("java.nio.charset.Charset");
@@ -97,9 +94,11 @@ public class DefaultCharset extends BugChecker
     };
 
     final String replacement;
+    final String title;
 
-    CharsetFix(String replacement) {
+    CharsetFix(String replacement, String title) {
       this.replacement = replacement;
+      this.title = title;
     }
 
     String replacement() {
@@ -235,16 +234,16 @@ public class DefaultCharset extends BugChecker
       String prefix,
       String suffix) {
     Tree parentReceiver = ASTHelpers.getReceiver(parent);
-    Builder fix = SuggestedFix.builder();
+    SuggestedFix.Builder fix = SuggestedFix.builder();
     if (parentReceiver != null) {
       fix.replace(
           /*startPos=*/ state.getEndPosition(parentReceiver),
-          /*endPos=*/ ((JCTree) tree).getStartPosition(),
+          /*endPos=*/ getStartPosition(tree),
           /*replaceWith=*/ "." + prefix);
     } else {
       fix.replace(
-          /*startPos=*/ ((JCTree) parent).getStartPosition(),
-          /*endPos=*/ ((JCTree) tree).getStartPosition(),
+          /*startPos=*/ getStartPosition(parent),
+          /*endPos=*/ getStartPosition(tree),
           /*replaceWith=*/ prefix);
     }
     fix.replace(
@@ -376,7 +375,7 @@ public class DefaultCharset extends BugChecker
         .accept(
             new TreeScanner<Void, Void>() {
               @Override
-              public Void visitVariable(VariableTree node, Void aVoid) {
+              public Void visitVariable(VariableTree node, Void unused) {
                 if (sym.equals(ASTHelpers.getSymbol(node))) {
                   fix.replace(node.getType(), replacement.getSimpleName())
                       .addImport(replacement.getCanonicalName());
@@ -522,6 +521,7 @@ public class DefaultCharset extends BugChecker
       fix.postfixWith(Iterables.getLast(arguments), ", " + charset.replacement());
     }
     charset.addImport(fix, state);
+    fix.setShortDescription(charset.title);
     return fix.build();
   }
 

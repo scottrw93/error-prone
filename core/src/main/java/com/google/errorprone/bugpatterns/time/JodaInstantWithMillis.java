@@ -15,8 +15,8 @@
  */
 package com.google.errorprone.bugpatterns.time;
 
-import static com.google.errorprone.BugPattern.ProvidesFix.REQUIRES_HUMAN_ATTENTION;
 import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
+import static com.google.errorprone.util.ASTHelpers.getStartPosition;
 
 import com.google.common.collect.Iterables;
 import com.google.errorprone.BugPattern;
@@ -30,7 +30,6 @@ import com.google.errorprone.matchers.Matcher;
 import com.google.errorprone.matchers.Matchers;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.MethodInvocationTree;
-import com.sun.tools.javac.tree.JCTree;
 
 /** Check for calls to {@code instant.withMillis(long)}. */
 @BugPattern(
@@ -41,8 +40,7 @@ import com.sun.tools.javac.tree.JCTree;
         "Joda-Time's 'instant.withMillis(long)' method is often a source of bugs because it "
             + "doesn't mutate the current instance but rather returns a new immutable Instant "
             + "instance. Please use new Instant(long) instead.",
-    severity = WARNING,
-    providesFix = REQUIRES_HUMAN_ATTENTION)
+    severity = WARNING)
 public final class JodaInstantWithMillis extends BugChecker implements MethodInvocationTreeMatcher {
   private static final Matcher<ExpressionTree> MATCHER =
       Matchers.allOf(
@@ -64,8 +62,7 @@ public final class JodaInstantWithMillis extends BugChecker implements MethodInv
         "new " + SuggestedFixes.qualifyType(state, builder, "org.joda.time.Instant") + "(";
     ExpressionTree millisArg = Iterables.getOnlyElement(tree.getArguments());
 
-    builder.replace(
-        ((JCTree) tree).getStartPosition(), ((JCTree) millisArg).getStartPosition(), replacement);
+    builder.replace(getStartPosition(tree), getStartPosition(millisArg), replacement);
     return describeMatch(tree, builder.build());
   }
 }

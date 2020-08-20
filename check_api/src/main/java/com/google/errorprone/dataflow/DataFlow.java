@@ -36,23 +36,23 @@ import com.sun.tools.javac.processing.JavacProcessingEnvironment;
 import com.sun.tools.javac.util.Context;
 import javax.annotation.Nullable;
 import javax.annotation.processing.ProcessingEnvironment;
-import org.checkerframework.dataflow.analysis.AbstractValue;
-import org.checkerframework.dataflow.analysis.Analysis;
-import org.checkerframework.dataflow.analysis.Store;
-import org.checkerframework.dataflow.analysis.TransferFunction;
-import org.checkerframework.dataflow.cfg.CFGBuilder;
-import org.checkerframework.dataflow.cfg.ControlFlowGraph;
-import org.checkerframework.dataflow.cfg.UnderlyingAST;
+import org.checkerframework.shaded.dataflow.analysis.AbstractValue;
+import org.checkerframework.shaded.dataflow.analysis.Analysis;
+import org.checkerframework.shaded.dataflow.analysis.Store;
+import org.checkerframework.shaded.dataflow.analysis.TransferFunction;
+import org.checkerframework.shaded.dataflow.cfg.CFGBuilder;
+import org.checkerframework.shaded.dataflow.cfg.ControlFlowGraph;
+import org.checkerframework.shaded.dataflow.cfg.UnderlyingAST;
 
 /**
- * Provides a wrapper around {@link org.checkerframework.dataflow.analysis.Analysis}.
+ * Provides a wrapper around {@link org.checkerframework.shaded.dataflow.analysis.Analysis}.
  *
  * @author konne@google.com (Konstantin Weitz)
  */
 public final class DataFlow {
 
   /** A pair of Analysis and ControlFlowGraph. */
-  public static interface Result<
+  public interface Result<
       A extends AbstractValue<A>, S extends Store<S>, T extends TransferFunction<A, S>> {
     Analysis<A, S, T> getAnalysis();
 
@@ -68,7 +68,7 @@ public final class DataFlow {
    * <li> multiple dataflow analyses for the same method are executed in arbitrary order
    * </ul>
    *
-   * TODO(user): Write a test that checks these assumptions
+   * TODO(b/158869538): Write a test that checks these assumptions
    */
   private static final LoadingCache<AnalysisParams, Analysis<?, ?, ?>> analysisCache =
       CacheBuilder.newBuilder()
@@ -76,12 +76,11 @@ public final class DataFlow {
               new CacheLoader<AnalysisParams, Analysis<?, ?, ?>>() {
                 @Override
                 public Analysis<?, ?, ?> load(AnalysisParams key) {
-                  final ProcessingEnvironment env = key.environment();
                   final ControlFlowGraph cfg = key.cfg();
                   final TransferFunction<?, ?> transfer = key.transferFunction();
 
                   @SuppressWarnings({"unchecked", "rawtypes"})
-                  final Analysis<?, ?, ?> analysis = new Analysis(transfer, env);
+                  final Analysis<?, ?, ?> analysis = new Analysis(transfer);
                   analysis.performAnalysis(cfg);
                   return analysis;
                 }
@@ -116,12 +115,12 @@ public final class DataFlow {
 
                   analysisCache.invalidateAll();
                   CompilationUnitTree root = methodPath.getCompilationUnit();
-                  // TODO(user), replace with faster build(bodyPath, env, ast, false, false);
+                  // TODO(b/158869538): replace with faster build(bodyPath, env, ast, false, false);
                   return CFGBuilder.build(root, ast, false, false, env);
                 }
               });
 
-  // TODO(user), remove once we merge jdk8 specific's with core
+  // TODO(b/158869538): remove once we merge jdk8 specific's with core
   @Nullable
   private static <T> TreePath findEnclosingMethodOrLambdaOrInitializer(TreePath path) {
     while (path != null) {

@@ -326,7 +326,14 @@ public class ErrorProneCompilerIntegrationTest {
 
   @Test
   public void flagEnablesCheck() {
-    String[] testFile = {"public class Test {", "  public Test() {", "    if (true);", "  }", "}"};
+    String[] testFile = {
+      "package test;", //
+      "public class Test {",
+      "  public Test() {",
+      "    if (true);",
+      "  }",
+      "}"
+    };
     List<JavaFileObject> fileObjects =
         Arrays.asList(compiler.fileManager().forSourceLines("Test.java", testFile));
     Result exitCode = compiler.compile(fileObjects);
@@ -349,7 +356,14 @@ public class ErrorProneCompilerIntegrationTest {
 
   @Test
   public void severityIsResetOnNextCompilation() {
-    String[] testFile = {"public class Test {", "  void doIt (int i) {", "    i = i;", "  }", "}"};
+    String[] testFile = {
+      "package test;", //
+      "public class Test {",
+      "  void doIt (int i) {",
+      "    i = i;",
+      "  }",
+      "}"
+    };
     List<JavaFileObject> fileObjects =
         Arrays.asList(compiler.fileManager().forSourceLines("Test.java", testFile));
     String[] args = {"-Xep:SelfAssignment:WARN"};
@@ -370,7 +384,14 @@ public class ErrorProneCompilerIntegrationTest {
 
   @Test
   public void maturityIsResetOnNextCompilation() {
-    String[] testFile = {"public class Test {", "  public Test() {", "    if (true);", "  }", "}"};
+    String[] testFile = {
+      "package test;", //
+      "public class Test {",
+      "  public Test() {",
+      "    if (true);",
+      "  }",
+      "}"
+    };
     List<JavaFileObject> fileObjects =
         Arrays.asList(compiler.fileManager().forSourceLines("Test.java", testFile));
     String[] args = {"-Xep:EmptyIf"};
@@ -534,7 +555,13 @@ public class ErrorProneCompilerIntegrationTest {
     Result exitCode =
         compiler.compile(
             new String[] {"-XDcompilePolicy=byfile"},
-            Arrays.asList(compiler.fileManager().forSourceLines("Test.java", "class Test {}")));
+            Arrays.asList(
+                compiler
+                    .fileManager()
+                    .forSourceLines(
+                        "Test.java", //
+                        "package test;",
+                        "class Test {}")));
     outputStream.flush();
     assertWithMessage(outputStream.toString()).that(exitCode).isEqualTo(Result.OK);
   }
@@ -544,7 +571,13 @@ public class ErrorProneCompilerIntegrationTest {
     Result exitCode =
         compiler.compile(
             new String[] {"-XDcompilePolicy=simple"},
-            Arrays.asList(compiler.fileManager().forSourceLines("Test.java", "class Test {}")));
+            Arrays.asList(
+                compiler
+                    .fileManager()
+                    .forSourceLines(
+                        "Test.java", //
+                        "package test;",
+                        "class Test {}")));
     outputStream.flush();
     assertWithMessage(outputStream.toString()).that(exitCode).isEqualTo(Result.OK);
   }

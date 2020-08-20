@@ -28,7 +28,6 @@ import static com.google.errorprone.matchers.Matchers.kindIs;
 import static com.sun.source.tree.Tree.Kind.ANNOTATION_TYPE;
 
 import com.google.errorprone.BugPattern;
-import com.google.errorprone.BugPattern.ProvidesFix;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.bugpatterns.BugChecker;
 import com.google.errorprone.bugpatterns.BugChecker.ClassTreeMatcher;
@@ -47,8 +46,7 @@ import javax.annotation.Nullable;
 @BugPattern(
     name = "InjectScopeOrQualifierAnnotationRetention",
     summary = "Scoping and qualifier annotations must have runtime retention.",
-    severity = ERROR,
-    providesFix = ProvidesFix.REQUIRES_HUMAN_ATTENTION)
+    severity = ERROR)
 public class ScopeOrQualifierAnnotationRetention extends BugChecker implements ClassTreeMatcher {
 
   private static final String RETENTION_ANNOTATION = "java.lang.annotation.Retention";
@@ -77,7 +75,10 @@ public class ScopeOrQualifierAnnotationRetention extends BugChecker implements C
       if (!state.isAndroidCompatible() && doesNotHaveRuntimeRetention(classSymbol)) {
         // Is this in a dagger component?
         ClassTree outer = ASTHelpers.findEnclosingNode(state.getPath(), ClassTree.class);
-        if (outer != null && InjectMatchers.IS_DAGGER_COMPONENT_OR_MODULE.matches(outer, state)) {
+        if (outer != null
+            && allOf(
+                    InjectMatchers.IS_DAGGER_COMPONENT_OR_MODULE)
+                .matches(outer, state)) {
           return Description.NO_MATCH;
         }
         return describe(classTree, state, ASTHelpers.getAnnotation(classSymbol, Retention.class));

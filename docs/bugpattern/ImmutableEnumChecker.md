@@ -16,6 +16,11 @@ To make enums immutable, ensure:
         that are built in to Error Prone (e.g. `java.lang.String`,
         `java.util.UUID`), or are annotated with
         `com.google.errorprone.annotations.Immutable`.
+
+        Other versions of the annotation, such as
+        `javax.annotation.concurrent.Immutable`, are currently *not* recognized.
+        See https://errorprone.info/bugpattern/Immutable for additional discussion.
+
     *   If the type you're using inside the enum can be annotated with
         `@Immutable`, you should do that:
 
@@ -129,4 +134,3 @@ This has several advantages on top of sidestepping this checker, e.g. not tying
 you to a particular functional interface type -- your callers should e.g. use
 `STRING::hasCompatibleType` instead of `STRING.hasCompatibleType` which only
 works for one interface type.
-

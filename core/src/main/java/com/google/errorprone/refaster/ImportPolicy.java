@@ -72,7 +72,8 @@ public enum ImportPolicy {
       List<String> topLevelPath = Splitter.on('.').splitToList(topLevelClazz);
       String topClazz = Iterables.getLast(topLevelPath);
       List<String> qualifiedPath = Splitter.on('.').splitToList(fullyQualifiedClazz);
-      boolean importTopLevelClazz = false, conflictTopLevelClazz = false;
+      boolean importTopLevelClazz = false;
+      boolean conflictTopLevelClazz = false;
       for (String importName : allImports) {
         if (importName.contentEquals(fullyQualifiedClazz)) {
           // fullyQualifiedClazz already imported
@@ -200,6 +201,11 @@ public enum ImportPolicy {
         return inliner
             .maker()
             .Select(inliner.maker().Ident(inliner.asName("Refaster")), inliner.asName(member));
+      }
+      // Foo.class tokens are considered static members :(.
+      if (member.toString().equals("class")) {
+        return IMPORT_TOP_LEVEL.staticReference(
+            inliner, topLevelClazz, fullyQualifiedClazz, member);
       }
       inliner.addStaticImport(fullyQualifiedClazz + "." + member);
       return inliner.maker().Ident(inliner.asName(member));

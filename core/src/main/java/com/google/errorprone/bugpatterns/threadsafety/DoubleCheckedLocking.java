@@ -17,12 +17,12 @@
 package com.google.errorprone.bugpatterns.threadsafety;
 
 import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
+import static com.google.errorprone.util.ASTHelpers.getStartPosition;
 import static com.google.errorprone.util.ASTHelpers.stripParentheses;
 
 import com.google.auto.value.AutoValue;
 import com.google.common.collect.ImmutableSet;
 import com.google.errorprone.BugPattern;
-import com.google.errorprone.BugPattern.ProvidesFix;
 import com.google.errorprone.BugPattern.StandardTags;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.bugpatterns.BugChecker;
@@ -59,8 +59,7 @@ import javax.lang.model.element.Modifier;
     name = "DoubleCheckedLocking",
     summary = "Double-checked locking on non-volatile fields is unsafe",
     severity = WARNING,
-    tags = StandardTags.FRAGILE_CODE,
-    providesFix = ProvidesFix.REQUIRES_HUMAN_ATTENTION)
+    tags = StandardTags.FRAGILE_CODE)
 public class DoubleCheckedLocking extends BugChecker implements IfTreeMatcher {
   @Override
   public Description matchIf(IfTree outerIf, VisitorState state) {
@@ -157,7 +156,7 @@ public class DoubleCheckedLocking extends BugChecker implements IfTreeMatcher {
     if (expr == null) {
       return Description.NO_MATCH;
     }
-    if (expr.getStartPosition() > ((JCTree) info.innerIf()).getStartPosition()) {
+    if (expr.getStartPosition() > getStartPosition(info.innerIf())) {
       return Description.NO_MATCH;
     }
     if (!(expr.getExpression() instanceof JCAssign)) {

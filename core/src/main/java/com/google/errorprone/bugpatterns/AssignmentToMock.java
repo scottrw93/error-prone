@@ -16,7 +16,6 @@
 
 package com.google.errorprone.bugpatterns;
 
-import static com.google.errorprone.BugPattern.ProvidesFix.REQUIRES_HUMAN_ATTENTION;
 import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
 import static com.google.errorprone.matchers.ChildMultiMatcher.MatchType.AT_LEAST_ONE;
 import static com.google.errorprone.matchers.Description.NO_MATCH;
@@ -26,6 +25,7 @@ import static com.google.errorprone.matchers.Matchers.anyOf;
 import static com.google.errorprone.matchers.Matchers.hasAnnotation;
 import static com.google.errorprone.matchers.Matchers.hasArgumentWithValue;
 import static com.google.errorprone.matchers.method.MethodMatchers.staticMethod;
+import static com.google.errorprone.util.ASTHelpers.getStartPosition;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
@@ -49,7 +49,6 @@ import com.sun.source.tree.Tree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.util.TreeScanner;
 import com.sun.tools.javac.parser.Tokens.TokenKind;
-import com.sun.tools.javac.tree.JCTree;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -57,8 +56,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @BugPattern(
     name = "AssignmentToMock",
     summary = "Fields annotated with @Mock should not be manually assigned to.",
-    severity = WARNING,
-    providesFix = REQUIRES_HUMAN_ATTENTION)
+    severity = WARNING)
 public final class AssignmentToMock extends BugChecker
     implements AssignmentTreeMatcher, VariableTreeMatcher {
 
@@ -105,9 +103,9 @@ public final class AssignmentToMock extends BugChecker
           ASTHelpers.getAnnotationWithSimpleName(tree.getModifiers().getAnnotations(), "Mock");
       return SuggestedFix.delete(anno);
     }
-    int startPos = ((JCTree) tree).getStartPosition();
+    int startPos = getStartPosition(tree);
     List<ErrorProneToken> tokens =
-        state.getOffsetTokens(startPos, ((JCTree) tree.getInitializer()).getStartPosition());
+        state.getOffsetTokens(startPos, getStartPosition(tree.getInitializer()));
     for (ErrorProneToken token : Lists.reverse(tokens)) {
       if (token.kind() == TokenKind.EQ) {
         return SuggestedFix.replace(token.pos(), state.getEndPosition(tree.getInitializer()), "");

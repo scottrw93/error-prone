@@ -3,8 +3,8 @@ For method return type, you should use the immutable type (such as
 `List`). This communicates to your callers important
 [semantic guarantees][javadoc].
 
-This is consistent with [Effective Java Item 52][ej52], which says to refer to
-objects by their interfaces. Guava's immutable collection classes offer
+This is consistent with [Effective Java 3rd Edition §64][ej3e-64], which says to
+refer to objects by their interfaces. Guava's immutable collection classes offer
 meaningful behavioral guarantees -- they are not merely a specific
 implementation as in the case of, say, `ArrayList`. They should be treated as
 interfaces in every important sense of the word.
@@ -32,5 +32,4 @@ prevent accidental attempts to modify the collection at compile-time (see
 [`ImmutableModification`]: https:errorprone.info/bugpattern/ImmutableModification
 
 [ej3e-64]: https://books.google.com/books?id=BIpDDwAAQBAJ
-
-[javadoc]: https://google.github.io/guava/releases/21.0/api/docs/com/google/common/collect/ImmutableCollection.html
+[javadoc]: https://guava.dev/releases/21.0/api/docs/com/google/common/collect/ImmutableCollection.html

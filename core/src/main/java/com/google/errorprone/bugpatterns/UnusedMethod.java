@@ -17,7 +17,6 @@
 package com.google.errorprone.bugpatterns;
 
 import static com.google.common.collect.Iterables.getLast;
-import static com.google.errorprone.BugPattern.ProvidesFix.REQUIRES_HUMAN_ATTENTION;
 import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
 import static com.google.errorprone.matchers.Matchers.SERIALIZATION_METHODS;
 import static com.google.errorprone.suppliers.Suppliers.typeFromString;
@@ -66,7 +65,6 @@ import javax.lang.model.element.Name;
     name = "UnusedMethod",
     altNames = {"Unused", "unused", "UnusedParameters"},
     summary = "Unused.",
-    providesFix = REQUIRES_HUMAN_ATTENTION,
     severity = WARNING,
     documentSuppression = false)
 public final class UnusedMethod extends BugChecker implements CompilationUnitTreeMatcher {
@@ -75,12 +73,16 @@ public final class UnusedMethod extends BugChecker implements CompilationUnitTre
   private static final String JUNIT_PARAMS_VALUE = "value";
   private static final String JUNIT_PARAMS_ANNOTATION_TYPE = "junitparams.Parameters";
 
-
   private static final ImmutableSet<String> EXEMPTING_METHOD_ANNOTATIONS =
       ImmutableSet.of(
           "com.google.inject.Provides",
           "com.google.inject.Inject",
-          "javax.inject.Inject");
+          "com.google.inject.multibindings.ProvidesIntoMap",
+          "com.google.inject.multibindings.ProvidesIntoSet",
+          "javax.annotation.PreDestroy",
+          "javax.annotation.PostConstruct",
+          "javax.inject.Inject",
+          "org.testng.annotations.DataProvider");
 
   /** The set of types exempting a type that is extending or implementing them. */
   private static final ImmutableSet<String> EXEMPTING_SUPER_TYPES =
@@ -266,11 +268,13 @@ public final class UnusedMethod extends BugChecker implements CompilationUnitTre
   private static boolean exemptedByAnnotation(
       List<? extends AnnotationTree> annotations, VisitorState state) {
     for (AnnotationTree annotation : annotations) {
-      if (((JCAnnotation) annotation).type != null) {
-        TypeSymbol tsym = ((JCAnnotation) annotation).type.tsym;
-        if (EXEMPTING_METHOD_ANNOTATIONS.contains(tsym.getQualifiedName().toString())) {
-          return true;
-        }
+      Type annotationType = getType(annotation);
+      if (annotationType == null) {
+        continue;
+      }
+      TypeSymbol tsym = annotationType.tsym;
+      if (EXEMPTING_METHOD_ANNOTATIONS.contains(tsym.getQualifiedName().toString())) {
+        return true;
       }
     }
     return false;

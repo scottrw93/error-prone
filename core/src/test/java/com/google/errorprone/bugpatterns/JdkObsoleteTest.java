@@ -280,4 +280,37 @@ public class JdkObsoleteTest {
             "}")
         .doTest();
   }
+
+  @Test
+  public void navigableMapInheritedMethod() {
+    testHelper
+        .addSourceLines(
+            "Test.java",
+            "import java.util.Map;",
+            "import java.util.Set;",
+            "import java.util.NavigableMap;",
+            "class Test {",
+            "  void f(NavigableMap<String, Integer> m) {",
+            "    for (Integer e : m.values()) {",
+            "    }",
+            "  }",
+            "}")
+        .doTest();
+  }
+
+  @Test
+  public void indirect() {
+    testHelper
+        .addSourceLines(
+            "Test.java",
+            "import com.google.common.collect.SortedSetMultimap;",
+            "import com.google.common.collect.TreeMultimap;",
+            "class Test {",
+            "  void f() {",
+            "    SortedSetMultimap<String, String> myMultimap = TreeMultimap.create();",
+            "    String myValue = myMultimap.get(\"foo\").first();",
+            "  }",
+            "}")
+        .doTest();
+  }
 }

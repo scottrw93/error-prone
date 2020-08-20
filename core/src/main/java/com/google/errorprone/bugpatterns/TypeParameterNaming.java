@@ -26,10 +26,10 @@ import com.google.common.collect.Iterables;
 import com.google.common.collect.Streams;
 import com.google.errorprone.BugPattern;
 import com.google.errorprone.BugPattern.LinkType;
-import com.google.errorprone.BugPattern.ProvidesFix;
 import com.google.errorprone.BugPattern.StandardTags;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.bugpatterns.BugChecker.TypeParameterTreeMatcher;
+import com.google.errorprone.fixes.SuggestedFixes;
 import com.google.errorprone.matchers.Description;
 import com.google.errorprone.names.NamingConventions;
 import com.google.errorprone.util.ASTHelpers;
@@ -62,7 +62,6 @@ import javax.lang.model.element.Name;
     severity = SUGGESTION,
     tags = StandardTags.STYLE,
     linkType = LinkType.CUSTOM,
-    providesFix = ProvidesFix.REQUIRES_HUMAN_ATTENTION,
     link = "https://google.github.io/styleguide/javaguide.html#s5.2.8-type-variable-names"
     )
 public class TypeParameterNaming extends BugChecker implements TypeParameterTreeMatcher {
@@ -144,7 +143,7 @@ public class TypeParameterNaming extends BugChecker implements TypeParameterTree
 
     if (classification != TypeParameterNamingClassification.NON_CLASS_NAME_WITH_T_SUFFIX) {
       descriptionBuilder.addFix(
-          TypeParameterShadowing.renameTypeVariable(
+          SuggestedFixes.renameTypeParameter(
               tree,
               state.getPath().getParentPath().getLeaf(),
               suggestedNameFollowedWithT(tree.getName().toString()),
@@ -153,7 +152,7 @@ public class TypeParameterNaming extends BugChecker implements TypeParameterTree
 
     return descriptionBuilder
         .addFix(
-            TypeParameterShadowing.renameTypeVariable(
+            SuggestedFixes.renameTypeParameter(
                 tree,
                 state.getPath().getParentPath().getLeaf(),
                 suggestedSingleLetter(tree.getName().toString(), tree),

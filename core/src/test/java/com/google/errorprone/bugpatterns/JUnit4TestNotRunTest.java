@@ -264,7 +264,6 @@ public class JUnit4TestNotRunTest {
         .doTest();
   }
 
-
   @Test
   public void hasOtherAnnotation_notATest() {
     compilationHelper
@@ -483,13 +482,32 @@ public class JUnit4TestNotRunTest {
   }
 
   @Test
+  public void suppression() {
+    compilationHelper
+        .addSourceLines(
+            "TestStuff.java",
+            "import org.junit.Test;",
+            "public class TestStuff {",
+            "  @SuppressWarnings(\"JUnit4TestNotRun\")",
+            "  public void testDoesSomething() {}",
+            "  @Test",
+            "  public void foo() {}",
+            "}")
+        .doTest();
+  }
+
+  @Test
   public void testNegativeCase1() {
-    compilationHelper.addSourceFile("JUnit4TestNotRunNegativeCase1.java").doTest();
+    compilationHelper
+        .addSourceFile("JUnit4TestNotRunNegativeCase1.java")
+        .doTest();
   }
 
   @Test
   public void testNegativeCase2() {
-    compilationHelper.addSourceFile("JUnit4TestNotRunNegativeCase2.java").doTest();
+    compilationHelper
+        .addSourceFile("JUnit4TestNotRunNegativeCase2.java")
+        .doTest();
   }
 
   @Test
@@ -499,7 +517,9 @@ public class JUnit4TestNotRunTest {
 
   @Test
   public void testNegativeCase4() {
-    compilationHelper.addSourceFile("JUnit4TestNotRunNegativeCase4.java").doTest();
+    compilationHelper
+        .addSourceFile("JUnit4TestNotRunNegativeCase4.java")
+        .doTest();
   }
 
   @Test

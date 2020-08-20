@@ -84,15 +84,18 @@ public final class LiteProtoToStringTest {
             "import com.google.protobuf.ProtocolMessageEnum;",
             "class Test {",
             "  private String test(EnumLite e) {",
-            "    // BUG: Diagnostic contains: e.getNumber()",
+            "    // BUG: Diagnostic contains:",
             "    return e.toString();",
             "  }",
             "  private String testImplicit(EnumLite e) {",
-            "    // BUG: Diagnostic contains: e.getNumber()",
+            "    // BUG: Diagnostic contains:",
             "    return \"\" + e;",
             "  }",
             "  private String test2(ProtocolMessageEnum e) {",
             "    return e.toString();",
+            "  }",
+            "  private String test3(ProtocolMessageEnum e) {",
+            "    return e.getValueDescriptor().toString();",
             "  }",
             "}")
         .doTest();
@@ -117,7 +120,6 @@ public final class LiteProtoToStringTest {
             "}")
         .doTest();
   }
-
 
   @Test
   public void androidLogAtInfoOrFiner_noWarning() {

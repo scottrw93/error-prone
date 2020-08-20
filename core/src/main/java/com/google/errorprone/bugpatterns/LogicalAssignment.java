@@ -18,9 +18,9 @@ package com.google.errorprone.bugpatterns;
 
 import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
 import static com.google.errorprone.matchers.Description.NO_MATCH;
+import static com.google.errorprone.util.ASTHelpers.getStartPosition;
 
 import com.google.errorprone.BugPattern;
-import com.google.errorprone.BugPattern.ProvidesFix;
 import com.google.errorprone.BugPattern.StandardTags;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.bugpatterns.BugChecker.DoWhileLoopTreeMatcher;
@@ -36,7 +36,6 @@ import com.sun.source.tree.ForLoopTree;
 import com.sun.source.tree.IfTree;
 import com.sun.source.tree.ParenthesizedTree;
 import com.sun.source.tree.WhileLoopTree;
-import com.sun.tools.javac.tree.JCTree;
 
 /** A {@link BugChecker}; see the associated {@link BugPattern} annotation for details. */
 @BugPattern(
@@ -45,8 +44,7 @@ import com.sun.tools.javac.tree.JCTree;
         "Assignment where a boolean expression was expected;"
             + " use == if this assignment wasn't expected or add parentheses for clarity.",
     severity = WARNING,
-    tags = StandardTags.LIKELY_ERROR,
-    providesFix = ProvidesFix.REQUIRES_HUMAN_ATTENTION)
+    tags = StandardTags.LIKELY_ERROR)
 public class LogicalAssignment extends BugChecker
     implements IfTreeMatcher, WhileLoopTreeMatcher, DoWhileLoopTreeMatcher, ForLoopTreeMatcher {
 
@@ -88,7 +86,7 @@ public class LogicalAssignment extends BugChecker
         .addFix(
             SuggestedFix.replace(
                 /*startPos=*/ state.getEndPosition(assign.getVariable()),
-                /*endPos=*/ ((JCTree) assign.getExpression()).getStartPosition(),
+                /*endPos=*/ getStartPosition(assign.getExpression()),
                 " == "))
         .build();
   }

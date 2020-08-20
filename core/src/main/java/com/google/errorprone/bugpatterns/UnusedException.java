@@ -16,11 +16,10 @@
 
 package com.google.errorprone.bugpatterns;
 
-import static com.google.common.collect.ImmutableList.toImmutableList;
 import static com.google.common.collect.Iterables.getLast;
-import static com.google.errorprone.BugPattern.ProvidesFix.REQUIRES_HUMAN_ATTENTION;
 import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
 import static com.google.errorprone.BugPattern.StandardTags.STYLE;
+import static com.google.errorprone.util.ASTHelpers.getStartPosition;
 import static com.google.errorprone.util.ASTHelpers.isSameType;
 
 import com.google.common.collect.ImmutableList;
@@ -66,7 +65,6 @@ import javax.lang.model.element.Modifier;
             + " exception rather than setting it as a cause. This can make debugging harder.",
     severity = WARNING,
     tags = STYLE,
-    providesFix = REQUIRES_HUMAN_ATTENTION,
     documentSuppression = false)
 public final class UnusedException extends BugChecker implements CatchTreeMatcher {
 
@@ -132,12 +130,7 @@ public final class UnusedException extends BugChecker implements CatchTreeMatche
     if (!(symbol instanceof ClassSymbol)) {
       return Optional.empty();
     }
-    ClassSymbol classSymbol = (ClassSymbol) symbol;
-    ImmutableList<MethodSymbol> constructors =
-        classSymbol.getEnclosedElements().stream()
-            .filter(Symbol::isConstructor)
-            .map(e -> (MethodSymbol) e)
-            .collect(toImmutableList());
+    ImmutableList<MethodSymbol> constructors = ASTHelpers.getConstructors((ClassSymbol) symbol);
     MethodSymbol constructorSymbol = ASTHelpers.getSymbol(constructor);
     if (constructorSymbol == null) {
       return Optional.empty();
@@ -177,7 +170,7 @@ public final class UnusedException extends BugChecker implements CatchTreeMatche
       // Skip past the opening '(' of the constructor.
 
       String source = state.getSourceForNode(constructor);
-      int startPosition = ((JCTree) constructor).getStartPosition();
+      int startPosition = getStartPosition(constructor);
       int pos =
           source.indexOf('(', state.getEndPosition(constructor.getIdentifier()) - startPosition)
               + startPosition

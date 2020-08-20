@@ -20,12 +20,13 @@ import static com.google.common.collect.Iterables.getLast;
 import static com.google.common.collect.Streams.forEachPair;
 import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
 import static com.google.errorprone.matchers.Description.NO_MATCH;
+import static com.google.errorprone.util.ASTHelpers.getStartPosition;
 
 import com.google.auto.value.AutoValue;
+import com.google.common.base.Preconditions;
 import com.google.common.base.Strings;
 import com.google.common.collect.Range;
 import com.google.errorprone.BugPattern;
-import com.google.errorprone.BugPattern.ProvidesFix;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.bugpatterns.BugChecker.MethodInvocationTreeMatcher;
 import com.google.errorprone.bugpatterns.BugChecker.NewClassTreeMatcher;
@@ -40,11 +41,9 @@ import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.Tree;
-import com.sun.tools.javac.code.Flags;
 import com.sun.tools.javac.code.Symbol.MethodSymbol;
 import com.sun.tools.javac.code.Symbol.VarSymbol;
 import com.sun.tools.javac.parser.Tokens.Comment;
-import com.sun.tools.javac.tree.JCTree;
 import com.sun.tools.javac.util.Position;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -58,8 +57,7 @@ import java.util.regex.Matcher;
     summary =
         "Detects `/* name= */`-style comments on actual parameters where the name doesn't match the"
             + " formal parameter",
-    severity = WARNING,
-    providesFix = ProvidesFix.REQUIRES_HUMAN_ATTENTION)
+    severity = WARNING)
 public class ParameterName extends BugChecker
     implements MethodInvocationTreeMatcher, NewClassTreeMatcher {
 
@@ -84,7 +82,7 @@ public class ParameterName extends BugChecker
     if (NamedParameterComment.containsSyntheticParameterName(sym)) {
       return;
     }
-    int start = ((JCTree) tree).getStartPosition();
+    int start = getStartPosition(tree);
     int end = state.getEndPosition(getLast(arguments));
     if (start == Position.NOPOS || end == Position.NOPOS) {
       // best effort work-around for https://github.com/google/error-prone/issues/780
@@ -120,14 +118,14 @@ public class ParameterName extends BugChecker
 
   private static boolean advanceTokens(
       Deque<ErrorProneToken> tokens, ExpressionTree actual, VisitorState state) {
-    while (!tokens.isEmpty() && tokens.peekFirst().pos() < ((JCTree) actual).getStartPosition()) {
+    while (!tokens.isEmpty() && tokens.peekFirst().pos() < getStartPosition(actual)) {
       tokens.removeFirst();
     }
     if (tokens.isEmpty()) {
       return false;
     }
     Range<Integer> argRange =
-        Range.closedOpen(((JCTree) actual).getStartPosition(), state.getEndPosition(actual));
+        Range.closedOpen(getStartPosition(actual), state.getEndPosition(actual));
     if (!argRange.contains(tokens.peekFirst().pos())) {
       return false;
     }
@@ -244,6 +242,9 @@ public class ParameterName extends BugChecker
   }
 
   private static boolean isVarargs(VarSymbol sym) {
-    return (sym.flags() & Flags.VARARGS) == Flags.VARARGS;
+    Preconditions.checkArgument(
+        sym.owner instanceof MethodSymbol, "sym must be a parameter to a method");
+    MethodSymbol method = (MethodSymbol) sym.owner;
+    return method.isVarArgs() && (method.getParameters().last() == sym);
   }
 }

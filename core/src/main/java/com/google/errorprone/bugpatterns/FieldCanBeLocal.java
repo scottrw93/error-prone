@@ -17,15 +17,15 @@
 package com.google.errorprone.bugpatterns;
 
 import static com.google.common.collect.Iterables.getLast;
-import static com.google.errorprone.BugPattern.ProvidesFix.REQUIRES_HUMAN_ATTENTION;
 import static com.google.errorprone.BugPattern.SeverityLevel.SUGGESTION;
 import static com.google.errorprone.util.ASTHelpers.getAnnotation;
+import static com.google.errorprone.util.ASTHelpers.getStartPosition;
 import static com.google.errorprone.util.ASTHelpers.getSymbol;
 
-import com.google.common.collect.HashMultimap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Multimap;
+import com.google.common.collect.MultimapBuilder;
 import com.google.common.collect.Sets;
 import com.google.errorprone.BugPattern;
 import com.google.errorprone.VisitorState;
@@ -48,12 +48,11 @@ import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import com.sun.tools.javac.code.Symbol;
 import com.sun.tools.javac.code.Symbol.VarSymbol;
-import com.sun.tools.javac.tree.JCTree;
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Target;
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -65,7 +64,6 @@ import javax.lang.model.element.ElementKind;
     altNames = {"unused", "Unused"},
     summary = "This field can be replaced with a local variable in the methods that use it.",
     severity = SUGGESTION,
-    providesFix = REQUIRES_HUMAN_ATTENTION,
     documentSuppression = false)
 public final class FieldCanBeLocal extends BugChecker implements CompilationUnitTreeMatcher {
   private static final ImmutableSet<ElementType> VALID_ON_LOCAL_VARIABLES =
@@ -73,18 +71,18 @@ public final class FieldCanBeLocal extends BugChecker implements CompilationUnit
 
   @Override
   public Description matchCompilationUnit(CompilationUnitTree tree, VisitorState state) {
-    Map<VarSymbol, TreePath> potentialFields = new HashMap<>();
-    Multimap<VarSymbol, TreePath> unconditionalAssignments = HashMultimap.create();
-    Multimap<VarSymbol, Tree> uses = HashMultimap.create();
+    Map<VarSymbol, TreePath> potentialFields = new LinkedHashMap<>();
+    Multimap<VarSymbol, TreePath> unconditionalAssignments =
+        MultimapBuilder.linkedHashKeys().linkedHashSetValues().build();
+    Multimap<VarSymbol, Tree> uses = MultimapBuilder.linkedHashKeys().linkedHashSetValues().build();
 
-    new TreePathScanner<Void, Void>() {
+    new SuppressibleTreePathScanner<Void, Void>() {
       @Override
       public Void visitVariable(VariableTree variableTree, Void unused) {
         VarSymbol symbol = getSymbol(variableTree);
         if (symbol != null
             && symbol.getKind() == ElementKind.FIELD
             && symbol.isPrivate()
-            && !isSuppressed(variableTree)
             && canBeLocal(variableTree)
         ) {
           potentialFields.put(symbol, getCurrentPath());
@@ -111,7 +109,6 @@ public final class FieldCanBeLocal extends BugChecker implements CompilationUnit
         return !Sets.intersection(VALID_ON_LOCAL_VARIABLES, ImmutableSet.copyOf(target.value()))
             .isEmpty();
       }
-
     }.scan(state.getPath(), null);
 
     new TreePathScanner<Void, Void>() {
@@ -244,6 +241,7 @@ public final class FieldCanBeLocal extends BugChecker implements CompilationUnit
       String annotations = getAnnotationSource(state, variableTree);
       fix.delete(declarationSite.getLeaf());
       Set<Tree> deletedTrees = new HashSet<>();
+      Set<Tree> scopesDeclared = new HashSet<>();
       for (TreePath assignmentSite : assignmentLocations) {
         AssignmentTree assignmentTree = (AssignmentTree) assignmentSite.getLeaf();
         Symbol rhsSymbol = getSymbol(assignmentTree.getExpression());
@@ -257,7 +255,10 @@ public final class FieldCanBeLocal extends BugChecker implements CompilationUnit
           deletedTrees.add(assignmentTree.getVariable());
           fix.delete(assignmentSite.getParentPath().getLeaf());
         } else {
-          fix.prefixWith(assignmentSite.getLeaf(), annotations + " " + type + " ");
+          Tree scope = assignmentSite.getParentPath().getParentPath().getLeaf();
+          if (scopesDeclared.add(scope)) {
+            fix.prefixWith(assignmentSite.getLeaf(), annotations + " " + type + " ");
+          }
         }
       }
       // Strip "this." off any uses of the field.
@@ -273,7 +274,7 @@ public final class FieldCanBeLocal extends BugChecker implements CompilationUnit
         }
         IdentifierTree ident = (IdentifierTree) selected;
         if (ident.getName().contentEquals("this")) {
-          fix.replace(((JCTree) ident).getStartPosition(), state.getEndPosition(ident) + 1, "");
+          fix.replace(getStartPosition(ident), state.getEndPosition(ident) + 1, "");
         }
       }
       state.reportMatch(describeMatch(declarationSite.getLeaf(), fix.build()));
@@ -289,8 +290,7 @@ public final class FieldCanBeLocal extends BugChecker implements CompilationUnit
     return state
         .getSourceCode()
         .subSequence(
-            ((JCTree) annotations.get(0)).getStartPosition(),
-            state.getEndPosition(getLast(annotations)))
+            getStartPosition(annotations.get(0)), state.getEndPosition(getLast(annotations)))
         .toString();
   }
 }

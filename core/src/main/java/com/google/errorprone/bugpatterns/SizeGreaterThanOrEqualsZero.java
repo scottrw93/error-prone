@@ -31,7 +31,6 @@ import com.google.common.collect.Iterables;
 import com.google.common.collect.Streams;
 import com.google.common.collect.Table.Cell;
 import com.google.errorprone.BugPattern;
-import com.google.errorprone.BugPattern.ProvidesFix;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.bugpatterns.BugChecker.BinaryTreeMatcher;
 import com.google.errorprone.fixes.SuggestedFix;
@@ -61,8 +60,7 @@ import java.util.regex.Pattern;
     name = "SizeGreaterThanOrEqualsZero",
     summary =
         "Comparison of a size >= 0 is always true, did you intend to check for " + "non-emptiness?",
-    severity = ERROR,
-    providesFix = ProvidesFix.REQUIRES_HUMAN_ATTENTION)
+    severity = ERROR)
 public class SizeGreaterThanOrEqualsZero extends BugChecker implements BinaryTreeMatcher {
 
   private enum MethodName {
@@ -86,12 +84,12 @@ public class SizeGreaterThanOrEqualsZero extends BugChecker implements BinaryTre
           .put("android.util.SparseBooleanArray", MethodName.SIZE, false)
           .put("android.util.SparseIntArray", MethodName.SIZE, false)
           .put("android.util.SparseLongArray", MethodName.SIZE, false)
-          .put("android.support.v4.util.CircularArray", MethodName.SIZE, true)
-          .put("android.support.v4.util.CircularIntArray", MethodName.SIZE, true)
-          .put("android.support.v4.util.LongSparseArray", MethodName.SIZE, false)
-          .put("android.support.v4.util.LruCache", MethodName.SIZE, false)
-          .put("android.support.v4.util.SimpleArrayMap", MethodName.SIZE, true)
-          .put("android.support.v4.util.SparseArrayCompat", MethodName.SIZE, false)
+          .put("androidx.collection.CircularArray", MethodName.SIZE, true)
+          .put("androidx.collection.CircularIntArray", MethodName.SIZE, true)
+          .put("androidx.collection.LongSparseArray", MethodName.SIZE, false)
+          .put("androidx.collection.LruCache", MethodName.SIZE, false)
+          .put("androidx.collection.SimpleArrayMap", MethodName.SIZE, true)
+          .put("androidx.collection.SparseArrayCompat", MethodName.SIZE, false)
           .put("com.google.common.collect.FluentIterable", MethodName.SIZE, true)
           .put("com.google.common.collect.Multimap", MethodName.SIZE, true)
           .put("java.io.ByteArrayOutputStream", MethodName.SIZE, false)

@@ -18,9 +18,9 @@ package com.google.errorprone.bugpatterns;
 
 import static com.google.common.base.Verify.verify;
 import static com.google.errorprone.BugPattern.SeverityLevel.ERROR;
+import static com.google.errorprone.util.ASTHelpers.getStartPosition;
 
 import com.google.errorprone.BugPattern;
-import com.google.errorprone.BugPattern.ProvidesFix;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.bugpatterns.BugChecker.MethodInvocationTreeMatcher;
 import com.google.errorprone.bugpatterns.BugChecker.NewClassTreeMatcher;
@@ -40,8 +40,7 @@ import java.util.List;
 @BugPattern(
     name = "UnnecessaryTypeArgument",
     summary = "Non-generic methods should not be invoked with type arguments",
-    severity = ERROR,
-    providesFix = ProvidesFix.REQUIRES_HUMAN_ATTENTION)
+    severity = ERROR)
 public class UnnecessaryTypeArgument extends BugChecker
     implements MethodInvocationTreeMatcher, NewClassTreeMatcher {
 
@@ -85,7 +84,7 @@ public class UnnecessaryTypeArgument extends BugChecker
 
     JCTree node = (JCTree) tree;
     int startAbsolute = node.getStartPosition();
-    int lower = ((JCTree) arguments.get(0)).getStartPosition() - startAbsolute;
+    int lower = getStartPosition(arguments.get(0)) - startAbsolute;
     int upper = state.getEndPosition(arguments.get(arguments.size() - 1)) - startAbsolute;
 
     CharSequence source = state.getSourceForNode(node);

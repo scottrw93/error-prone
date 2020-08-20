@@ -17,18 +17,20 @@
 package com.google.errorprone.bugpatterns;
 
 import static com.google.common.collect.Iterables.getOnlyElement;
+import static com.google.common.collect.Streams.stream;
 import static com.google.errorprone.BugPattern.SeverityLevel.ERROR;
 import static com.google.errorprone.matchers.Description.NO_MATCH;
 import static com.google.errorprone.matchers.method.MethodMatchers.instanceMethod;
+import static com.google.errorprone.util.ASTHelpers.getSymbol;
 
 import com.google.errorprone.BugPattern;
-import com.google.errorprone.BugPattern.ProvidesFix;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.bugpatterns.BugChecker.MethodInvocationTreeMatcher;
 import com.google.errorprone.fixes.SuggestedFix;
 import com.google.errorprone.matchers.Description;
 import com.google.errorprone.matchers.Matcher;
 import com.google.errorprone.util.ASTHelpers;
+import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.MethodInvocationTree;
 
@@ -38,8 +40,7 @@ import com.sun.source.tree.MethodInvocationTree;
     summary =
         "`describeMatch(tree, fix)` is equivalent to and simpler than"
             + " `buildDescription(tree).addFix(fix).build()`",
-    severity = ERROR,
-    providesFix = ProvidesFix.REQUIRES_HUMAN_ATTENTION)
+    severity = ERROR)
 public class DescribeMatch extends BugChecker implements MethodInvocationTreeMatcher {
 
   private static final Matcher<ExpressionTree> BUILD_DESCRIPTION =
@@ -58,6 +59,9 @@ public class DescribeMatch extends BugChecker implements MethodInvocationTreeMat
     if (!BUILD.matches(build, state)) {
       return NO_MATCH;
     }
+    if (withinBugChecker(state)) {
+      return NO_MATCH;
+    }
     ExpressionTree addFix = ASTHelpers.getReceiver(build);
     if (!ADD_FIX.matches(addFix, state)) {
       return NO_MATCH;
@@ -73,6 +77,16 @@ public class DescribeMatch extends BugChecker implements MethodInvocationTreeMat
             String.format(
                 "describeMatch(%s, %s)",
                 getArgument(state, buildDescription), getArgument(state, addFix))));
+  }
+
+  private static boolean withinBugChecker(VisitorState state) {
+    return stream(state.getPath())
+        .anyMatch(
+            t ->
+                t instanceof ClassTree
+                    && getSymbol(t)
+                        .getQualifiedName()
+                        .contentEquals(BugChecker.class.getCanonicalName()));
   }
 
   private static String getArgument(VisitorState state, ExpressionTree tree) {

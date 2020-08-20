@@ -28,8 +28,6 @@ import static com.google.errorprone.names.LevenshteinEditDistance.getEditDistanc
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Sets;
 import com.google.errorprone.BugPattern;
-import com.google.errorprone.BugPattern.ProvidesFix;
-import com.google.errorprone.BugPattern.StandardTags;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.bugpatterns.BugChecker;
 import com.google.errorprone.bugpatterns.BugChecker.ClassTreeMatcher;
@@ -54,16 +52,19 @@ import java.util.regex.Pattern;
  *
  * @author ghm@google.com (Graeme Morgan)
  */
+// TODO(ghm): Split this into the @param part and the @code part; the former is always right that
+// there's a mistake, but the latter is based on a heuristic.
 @BugPattern(
     name = "InvalidParam",
     summary = "This @param tag doesn't refer to a parameter of the method.",
     severity = WARNING,
-    tags = StandardTags.STYLE,
-    providesFix = ProvidesFix.REQUIRES_HUMAN_ATTENTION,
     documentSuppression = false)
 public final class InvalidParam extends BugChecker implements ClassTreeMatcher, MethodTreeMatcher {
 
   private static final Pattern POSSIBLE_PARAMETER = Pattern.compile("[a-z][A-Za-z0-9]*");
+
+  /** Names which are often used in {@literal @}code blocks, and shouldn't be checked. */
+  private static final ImmutableSet<String> EXCLUSIONS = ImmutableSet.of("true", "false");
 
   /**
    * Heuristic for the relative edit distance below which we report maybe-param {@literal @code}s.
@@ -159,7 +160,7 @@ public final class InvalidParam extends BugChecker implements ClassTreeMatcher, 
         return super.visitLiteral(node, null);
       }
       String body = node.getBody().getBody();
-      if (!POSSIBLE_PARAMETER.matcher(body).matches()) {
+      if (!POSSIBLE_PARAMETER.matcher(body).matches() || EXCLUSIONS.contains(body)) {
         return super.visitLiteral(node, null);
       }
       String bestMatch = null;

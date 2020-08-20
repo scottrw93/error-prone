@@ -28,9 +28,9 @@ import static com.google.errorprone.matchers.Matchers.anyOf;
 import static com.google.errorprone.matchers.Matchers.constructor;
 import static com.google.errorprone.matchers.Matchers.hasAnnotation;
 import static com.google.errorprone.matchers.Matchers.methodHasParameters;
+import static com.google.errorprone.matchers.Matchers.symbolHasAnnotation;
 
 import com.google.errorprone.BugPattern;
-import com.google.errorprone.BugPattern.ProvidesFix;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.bugpatterns.BugChecker;
 import com.google.errorprone.bugpatterns.BugChecker.ClassTreeMatcher;
@@ -55,15 +55,16 @@ import com.sun.source.tree.MethodTree;
 @BugPattern(
     name = "GuiceAssistedInjectScoping",
     summary = "Scope annotation on implementation class of AssistedInject factory is not allowed",
-    severity = ERROR,
-    providesFix = ProvidesFix.REQUIRES_HUMAN_ATTENTION)
+    severity = ERROR)
 public class AssistedInjectScoping extends BugChecker implements ClassTreeMatcher {
 
   /** Matches classes that have an annotation that itself is annotated with @ScopeAnnotation. */
   private static final MultiMatcher<ClassTree, AnnotationTree> CLASS_TO_SCOPE_ANNOTATIONS =
       annotations(
           AT_LEAST_ONE,
-          anyOf(hasAnnotation(GUICE_SCOPE_ANNOTATION), hasAnnotation(JAVAX_SCOPE_ANNOTATION)));
+          anyOf(
+              symbolHasAnnotation(GUICE_SCOPE_ANNOTATION),
+              symbolHasAnnotation(JAVAX_SCOPE_ANNOTATION)));
 
   /** Matches if any constructor of a class is annotated with an @Inject annotation. */
   private static final MultiMatcher<ClassTree, MethodTree> CLASS_TO_INJECTED_CONSTRUCTORS =

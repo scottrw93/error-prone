@@ -16,10 +16,10 @@
 
 package com.google.errorprone.bugpatterns;
 
-import static com.google.errorprone.BugPattern.ProvidesFix.REQUIRES_HUMAN_ATTENTION;
 import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
 
 import com.google.auto.value.AutoValue;
+import com.google.common.base.VerifyException;
 import com.google.common.collect.ImmutableList;
 import com.google.errorprone.BugPattern;
 import com.google.errorprone.VisitorState;
@@ -33,19 +33,26 @@ import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.ThrowTree;
 
-/** Bugpattern to discourage throwing base exception classes.. */
+/** Bugpattern to discourage throwing base exception classes. */
 @BugPattern(
     name = "ThrowSpecificExceptions",
     summary =
-        "Consider throwing more specific exceptions rather than (e.g.) RuntimeException. Throwing"
-            + " generic exceptions forces any users of the API that wish to handle the failure"
-            + " mode to catch very non-specific exceptions that convey little information.",
-    providesFix = REQUIRES_HUMAN_ATTENTION,
+        "Base exception classes should be treated as abstract. If the exception is intended to be"
+            + " caught, throw a domain-specific exception. Otherwise, prefer a more specific"
+            + " exception for clarity. Common alternatives include: AssertionError,"
+            + " IllegalArgumentException, IllegalStateException, and (Guava's) VerifyException.",
+    explanation =
+        "1. Defensive coding: Using a generic exception would force a caller that wishes to catch"
+            + " it to potentially catch unrelated exceptions as well."
+            + "\n\n"
+            + "2. Clarity: Base exception classes offer no information on the nature of the"
+            + " failure.",
+
     severity = WARNING)
 public final class ThrowSpecificExceptions extends BugChecker implements NewClassTreeMatcher {
   private static final ImmutableList<AbstractLikeException> ABSTRACT_LIKE_EXCEPTIONS =
       ImmutableList.of(
-          AbstractLikeException.of(RuntimeException.class, IllegalStateException.class),
+          AbstractLikeException.of(RuntimeException.class, VerifyException.class),
           AbstractLikeException.of(Throwable.class, AssertionError.class),
           AbstractLikeException.of(Error.class, AssertionError.class));
 

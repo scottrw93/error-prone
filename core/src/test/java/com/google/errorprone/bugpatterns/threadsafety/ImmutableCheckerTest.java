@@ -21,7 +21,6 @@ import com.google.errorprone.CompilationTestHelper;
 import com.google.errorprone.annotations.Immutable;
 import com.google.errorprone.annotations.concurrent.LazyInit;
 import java.util.Arrays;
-import java.util.List;
 import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -1201,7 +1200,6 @@ public class ImmutableCheckerTest {
         .doTest();
   }
 
-
   // any final null reference constant is immutable, but do we actually care?
   //
   // javac makes it annoying to figure this out - since null isn't a compile-time constant,
@@ -1819,6 +1817,31 @@ public class ImmutableCheckerTest {
             "  @Immutable interface I {}",
             "  void test(I i) {",
             "    g(f(i), f(i));",
+            "  }",
+            "}")
+        .doTest();
+  }
+
+  // regression test for b/148734874
+  @Test
+  public void immutableTypeParameter_instantiations_negative() {
+    compilationHelper
+        .addSourceLines(
+            "Test.java",
+            "import com.google.errorprone.annotations.ImmutableTypeParameter;",
+            "import com.google.errorprone.annotations.Immutable;",
+            "abstract class T {",
+            "  interface S<T> {}",
+            "  interface L<T> {}",
+            "  interface A {}",
+            "  @Immutable interface B extends A {}",
+            "  @Immutable interface C extends B {}",
+            "  abstract <X, Y, Z> void h(S<X> firstType, S<Y> secondType, S<Z> thirdType);",
+            "  abstract <@ImmutableTypeParameter E extends A> S<E> f(Class<E> entityClass);",
+            "  abstract <T> S<L<T>> g(S<T> element);",
+            "  void test() {",
+            "    // BUG: Diagnostic contains: the declaration of type 'T.A' is not annotated",
+            "    h(f(A.class), g(f(B.class)), g(f(C.class)));",
             "  }",
             "}")
         .doTest();

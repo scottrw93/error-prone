@@ -38,7 +38,7 @@ import com.sun.source.tree.UnaryTree;
 import com.sun.source.util.TreeScanner;
 import com.sun.tools.javac.code.Symbol;
 import com.sun.tools.javac.code.Symbol.VarSymbol;
-import java.util.Map.Entry;
+import java.util.Map;
 
 /** A {@link BugChecker}; see the associated {@link BugPattern} annotation for details. */
 @BugPattern(
@@ -61,7 +61,7 @@ public class StaticGuardedByInstance extends BugChecker implements SynchronizedT
       return Description.NO_MATCH;
     }
     Multimap<VarSymbol, Tree> writes = WriteVisitor.scan(tree.getBlock());
-    for (Entry<VarSymbol, Tree> write : writes.entries()) {
+    for (Map.Entry<VarSymbol, Tree> write : writes.entries()) {
       if (!write.getKey().isStatic()) {
         continue;
       }
@@ -116,13 +116,13 @@ public class StaticGuardedByInstance extends BugChecker implements SynchronizedT
     }
 
     @Override
-    public Void visitSynchronized(SynchronizedTree node, Void aVoid) {
+    public Void visitSynchronized(SynchronizedTree node, Void unused) {
       // don't descend into nested synchronized blocks
       return null;
     }
 
     @Override
-    public Void visitNewClass(NewClassTree node, Void aVoid) {
+    public Void visitNewClass(NewClassTree node, Void unused) {
       // don't descend into nested synchronized blocks
       return null;
     }

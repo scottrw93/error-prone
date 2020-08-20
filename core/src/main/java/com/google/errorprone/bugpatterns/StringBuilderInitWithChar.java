@@ -17,7 +17,6 @@ package com.google.errorprone.bugpatterns;
 import static com.google.errorprone.BugPattern.SeverityLevel.ERROR;
 
 import com.google.errorprone.BugPattern;
-import com.google.errorprone.BugPattern.ProvidesFix;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.bugpatterns.BugChecker.NewClassTreeMatcher;
 import com.google.errorprone.fixes.SuggestedFix;
@@ -36,8 +35,7 @@ import javax.lang.model.type.TypeKind;
 @BugPattern(
     name = "StringBuilderInitWithChar",
     severity = ERROR,
-    summary = "StringBuilder does not have a char constructor; this invokes the int constructor.",
-    providesFix = ProvidesFix.REQUIRES_HUMAN_ATTENTION)
+    summary = "StringBuilder does not have a char constructor; this invokes the int constructor.")
 public class StringBuilderInitWithChar extends BugChecker implements NewClassTreeMatcher {
   @Override
   public Description matchNewClass(NewClassTree tree, VisitorState state) {
@@ -45,7 +43,7 @@ public class StringBuilderInitWithChar extends BugChecker implements NewClassTre
             state.getSymtab().stringBuilderType, ASTHelpers.getType(tree.getIdentifier()), state)
         && tree.getArguments().size() == 1) {
       ExpressionTree argument = tree.getArguments().get(0);
-      Type type = ((JCTree) argument).type;
+      Type type = ASTHelpers.getType(argument);
       if (type.getKind() == TypeKind.CHAR) {
         if (argument.getKind() == Kind.CHAR_LITERAL) {
           char ch = (Character) ((LiteralTree) argument).getValue();

@@ -16,10 +16,10 @@
 
 package com.google.errorprone.bugpatterns.javadoc;
 
-import static com.google.errorprone.BugPattern.ProvidesFix.REQUIRES_HUMAN_ATTENTION;
 import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
 import static com.google.errorprone.BugPattern.StandardTags.STYLE;
 import static com.google.errorprone.matchers.Description.NO_MATCH;
+import static com.google.errorprone.util.ASTHelpers.getStartPosition;
 import static com.google.errorprone.util.ASTHelpers.getSymbol;
 import static java.util.stream.Collectors.joining;
 
@@ -40,9 +40,10 @@ import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.VariableTree;
-import com.sun.source.util.TreePathScanner;
 import com.sun.tools.javac.parser.Tokens.Comment;
-import com.sun.tools.javac.tree.JCTree;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Optional;
 import java.util.regex.Pattern;
 import javax.lang.model.element.ElementKind;
 
@@ -57,7 +58,6 @@ import javax.lang.model.element.ElementKind;
             + " (/**); is it meant to be Javadoc?",
     severity = WARNING,
     tags = STYLE,
-    providesFix = REQUIRES_HUMAN_ATTENTION,
     documentSuppression = false)
 public final class AlmostJavadoc extends BugChecker implements CompilationUnitTreeMatcher {
   private static final Pattern HAS_TAG =
@@ -82,23 +82,49 @@ public final class AlmostJavadoc extends BugChecker implements CompilationUnitTr
         if (!javadocableTrees.containsKey(token.pos())) {
           continue;
         }
-        if (!comment.getText().startsWith("/*") || comment.getText().startsWith("/**")) {
-          continue;
-        }
-        if (HAS_TAG.matcher(comment.getText()).find()) {
-          int pos = comment.getSourcePos(1);
-          SuggestedFix fix = SuggestedFix.replace(pos, pos, "*");
-          state.reportMatch(describeMatch(javadocableTrees.get(token.pos()), fix));
-        }
+        generateFix(comment)
+            .ifPresent(
+                fix -> state.reportMatch(describeMatch(javadocableTrees.get(token.pos()), fix)));
       }
     }
     return NO_MATCH;
   }
 
+  private static Optional<SuggestedFix> generateFix(Comment comment) {
+    String text = comment.getText();
+    if (text.startsWith("/*") && !text.startsWith("/**")) {
+      if (HAS_TAG.matcher(text).find()) {
+        int pos = comment.getSourcePos(1);
+        return Optional.of(SuggestedFix.replace(pos, pos, "*"));
+      }
+    }
+    if (text.startsWith("//") && text.endsWith("*/")) {
+      if (text.startsWith("// /**")) {
+        return Optional.of(
+            SuggestedFix.replace(comment.getSourcePos(0), comment.getSourcePos(2), ""));
+      }
+      int endReplacement = 2;
+      while (endReplacement < text.length()) {
+        char c = text.charAt(endReplacement);
+        if (c == '/') {
+          return Optional.empty();
+        }
+        if (c != '*' && c != ' ') {
+          break;
+        }
+        ++endReplacement;
+      }
+      return Optional.of(
+          SuggestedFix.replace(
+              comment.getSourcePos(1), comment.getSourcePos(endReplacement), "**"));
+    }
+    return Optional.empty();
+  }
+
   private ImmutableMap<Integer, Tree> getJavadocableTrees(
       CompilationUnitTree tree, VisitorState state) {
-    ImmutableMap.Builder<Integer, Tree> javadoccablePositions = ImmutableMap.builder();
-    new TreePathScanner<Void, Void>() {
+    Map<Integer, Tree> javadoccablePositions = new HashMap<>();
+    new SuppressibleTreePathScanner<Void, Void>() {
       @Override
       public Void visitClass(ClassTree classTree, Void unused) {
         if (!shouldMatch()) {
@@ -143,18 +169,15 @@ public final class AlmostJavadoc extends BugChecker implements CompilationUnitTr
       }
 
       private boolean shouldMatch() {
-        if (isSuppressed(getCurrentPath().getLeaf())) {
-          return false;
-        }
         // Check there isn't already a Javadoc for the element under question, otherwise we might
         // suggest double Javadoc.
         return Utils.getDocTreePath(state.withPath(getCurrentPath())) == null;
       }
 
       private int startPos(Tree tree) {
-        return ((JCTree) tree).getStartPosition();
+        return getStartPosition(tree);
       }
     }.scan(tree, null);
-    return javadoccablePositions.build();
+    return ImmutableMap.copyOf(javadoccablePositions);
   }
 }

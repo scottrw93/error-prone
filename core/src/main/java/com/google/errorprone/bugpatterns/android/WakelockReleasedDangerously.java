@@ -25,10 +25,8 @@ import static com.google.errorprone.util.ASTHelpers.getSymbol;
 import static com.google.errorprone.util.ASTHelpers.getType;
 
 import com.google.common.collect.ImmutableMultimap;
-import com.google.common.collect.ImmutableMultimap.Builder;
 import com.google.common.collect.Streams;
 import com.google.errorprone.BugPattern;
-import com.google.errorprone.BugPattern.ProvidesFix;
 import com.google.errorprone.BugPattern.SeverityLevel;
 import com.google.errorprone.BugPattern.StandardTags;
 import com.google.errorprone.VisitorState;
@@ -64,8 +62,7 @@ import com.sun.tools.javac.code.Types;
         "A wakelock acquired with a timeout may be released by the system before calling"
             + " `release`, even after checking `isHeld()`. If so, it will throw a RuntimeException."
             + " Please wrap in a try/catch block.",
-    severity = SeverityLevel.WARNING,
-    providesFix = ProvidesFix.REQUIRES_HUMAN_ATTENTION)
+    severity = SeverityLevel.WARNING)
 public class WakelockReleasedDangerously extends BugChecker implements MethodInvocationTreeMatcher {
 
   private static final String WAKELOCK_CLASS_NAME = "android.os.PowerManager.WakeLock";
@@ -194,7 +191,7 @@ public class WakelockReleasedDangerously extends BugChecker implements MethodInv
    */
   private ImmutableMultimap<String, MethodInvocationTree> methodCallsForSymbol(
       Symbol sym, ClassTree classTree) {
-    Builder<String, MethodInvocationTree> methodMap = ImmutableMultimap.builder();
+    ImmutableMultimap.Builder<String, MethodInvocationTree> methodMap = ImmutableMultimap.builder();
     // Populate map builder with names of method called : the tree in which it is called.
     classTree.accept(
         new TreeScanner<Void, Void>() {

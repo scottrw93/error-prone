@@ -36,7 +36,7 @@ import javax.annotation.Nullable;
  * Extracts the necessary information from a {@link MethodInvocationTree} to check whether calls to
  * a method are using incompatible types and to emit a helpful error message.
  */
-abstract class AbstractCollectionIncompatibleTypeMatcher {
+public abstract class AbstractCollectionIncompatibleTypeMatcher {
 
   /**
    * Returns a matcher for the appropriate method invocation for this matcher. For example, this
@@ -101,8 +101,12 @@ abstract class AbstractCollectionIncompatibleTypeMatcher {
   @Nullable
   abstract Type extractTargetType(MemberReferenceTree tree, VisitorState state);
 
+  /**
+   * Encapsulates the result of matching a {@link Collection#contains}-like call, including the
+   * source and target types.
+   */
   @AutoValue
-  abstract static class MatchResult {
+  public abstract static class MatchResult {
     public abstract ExpressionTree sourceTree();
 
     public abstract Type sourceType();
@@ -177,7 +181,7 @@ abstract class AbstractCollectionIncompatibleTypeMatcher {
    * @return the type argument, if defined, or null otherwise
    */
   @Nullable
-  protected static final Type extractTypeArgAsMemberOfSupertype(
+  protected static Type extractTypeArgAsMemberOfSupertype(
       Type type, Symbol superTypeSym, int typeArgIndex, Types types) {
     Type collectionType = types.asSuper(type, superTypeSym);
     if (collectionType == null) {

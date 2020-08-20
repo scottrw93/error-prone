@@ -24,7 +24,7 @@ import com.google.common.collect.ImmutableSetMultimap;
 import com.google.errorprone.BugPattern;
 import com.google.errorprone.ErrorProneFlags;
 import com.google.errorprone.bugpatterns.apidiff.ApiDiff.ClassMemberKey;
-import java.util.Map.Entry;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -36,9 +36,6 @@ import java.util.stream.Collectors;
     name = "AndroidJdkLibsChecker",
     altNames = {"Java7ApiChecker", "AndroidApiChecker"},
     summary = "Use of class, field, or method that is not compatible with legacy Android devices",
-    explanation =
-        "Code that needs to be compatible with Android cannot use types or members that "
-            + "only the latest or unreleased devices can handle",
     severity = ERROR)
 // TODO(b/32513850): Allow Android N+ APIs, e.g., by computing API diff using android.jar
 public class AndroidJdkLibsChecker extends ApiDiffChecker {
@@ -101,7 +98,7 @@ public class AndroidJdkLibsChecker extends ApiDiffChecker {
       bannedMembers = allowJava8 ? DESUGAR_BANNED_MEMBERS : ImmutableSetMultimap.of();
     }
 
-    private boolean memberIsWhitelisted(Entry<String, ClassMemberKey> member) {
+    private boolean memberIsWhitelisted(Map.Entry<String, ClassMemberKey> member) {
       return allowedMembers.containsEntry(member.getKey(), member.getValue())
           || allowedMembers.get(member.getKey()).stream()
               .anyMatch(
@@ -128,11 +125,13 @@ public class AndroidJdkLibsChecker extends ApiDiffChecker {
         ImmutableSet.<String>builder()
             .addAll(BASE_ALLOWED_CLASSES)
             .add("java/io/UncheckedIOException")
+            .add("java/util/ArrayList")
             .add("java/util/Collection")
             .add("java/util/Comparator")
             .add("java/util/DoubleSummaryStatistics")
             .add("java/util/IntSummaryStatistics")
             .add("java/util/Iterator")
+            .add("java/util/List")
             .add("java/util/LongSummaryStatistics")
             .add("java/util/Map")
             .add("java/util/Map\\$$Entry")
@@ -142,12 +141,14 @@ public class AndroidJdkLibsChecker extends ApiDiffChecker {
             .add("java/util/OptionalInt")
             .add("java/util/OptionalLong")
             .add("java/util/PrimitiveIterator")
+            .add("java/util/Set")
             .add("java/util/Spliterator")
             .add("java/util/Spliterator$OfDouble")
             .add("java/util/Spliterator$OfInt")
             .add("java/util/Spliterator$OfLong")
             .add("java/util/Spliterator$OfPrimitive")
             .add("java/util/StringJoiner")
+            .add("java/util/concurrent/ConcurrentMap")
             .add("java/util/concurrent/atomic/AtomicInteger")
             .add("java/util/concurrent/atomic/AtomicLong")
             .add("java/util/concurrent/atomic/AtomicReference")

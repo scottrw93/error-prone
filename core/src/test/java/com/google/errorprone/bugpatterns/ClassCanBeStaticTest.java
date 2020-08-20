@@ -17,7 +17,6 @@
 package com.google.errorprone.bugpatterns;
 
 import com.google.errorprone.CompilationTestHelper;
-import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -26,12 +25,8 @@ import org.junit.runners.JUnit4;
 @RunWith(JUnit4.class)
 public class ClassCanBeStaticTest {
 
-  private CompilationTestHelper compilationHelper;
-
-  @Before
-  public void setUp() {
-    compilationHelper = CompilationTestHelper.newInstance(ClassCanBeStatic.class, getClass());
-  }
+  private final CompilationTestHelper compilationHelper =
+      CompilationTestHelper.newInstance(ClassCanBeStatic.class, getClass());
 
   @Test
   public void testNegativeCase() {
@@ -358,6 +353,25 @@ public class ClassCanBeStaticTest {
             "    {",
             "      Supplier<A> s = A::new; // capture enclosing instance",
             "      System.err.println(s.get());",
+            "    }",
+            "  }",
+            "}")
+        .doTest();
+  }
+
+  @Test
+  public void labelledBreak() {
+    compilationHelper
+        .addSourceLines(
+            "A.java",
+            "public class A {",
+            "  // BUG: Diagnostic contains:",
+            "  class Inner {",
+            "    void f() {",
+            "      OUTER:",
+            "      while (true) {",
+            "        break OUTER;",
+            "      }",
             "    }",
             "  }",
             "}")

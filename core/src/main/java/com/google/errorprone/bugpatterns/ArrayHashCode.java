@@ -26,7 +26,6 @@ import static com.google.errorprone.predicates.TypePredicates.isArray;
 
 import com.google.common.base.Preconditions;
 import com.google.errorprone.BugPattern;
-import com.google.errorprone.BugPattern.ProvidesFix;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.bugpatterns.BugChecker.MethodInvocationTreeMatcher;
 import com.google.errorprone.fixes.SuggestedFix;
@@ -46,8 +45,7 @@ import com.sun.tools.javac.tree.JCTree.JCFieldAccess;
     name = "ArrayHashCode",
     summary = "hashcode method on array does not hash array contents",
     severity = ERROR,
-    generateExamplesFromTestCases = false,
-    providesFix = ProvidesFix.REQUIRES_HUMAN_ATTENTION)
+    generateExamplesFromTestCases = false)
 public class ArrayHashCode extends BugChecker implements MethodInvocationTreeMatcher {
 
   /**
@@ -65,7 +63,6 @@ public class ArrayHashCode extends BugChecker implements MethodInvocationTreeMat
    * Matches calls to the JDK7 method {@link java.util.Objects#hashCode} with an argument of array
    * type. This method is not varargs, so we don't need to check the number of arguments.
    */
-  @SuppressWarnings({"unchecked"})
   private static final Matcher<MethodInvocationTree> jdk7HashCodeMethodMatcher =
       allOf(
           staticMethod().onClass("java.util.Objects").named("hashCode"),

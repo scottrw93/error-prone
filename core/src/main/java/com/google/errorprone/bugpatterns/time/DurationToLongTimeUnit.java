@@ -15,7 +15,6 @@
  */
 package com.google.errorprone.bugpatterns.time;
 
-import static com.google.errorprone.BugPattern.ProvidesFix.REQUIRES_HUMAN_ATTENTION;
 import static com.google.errorprone.BugPattern.SeverityLevel.ERROR;
 import static com.google.errorprone.matchers.Matchers.instanceMethod;
 import static com.google.errorprone.matchers.Matchers.staticMethod;
@@ -43,7 +42,7 @@ import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.tools.javac.code.Type;
 import java.util.List;
-import java.util.Map.Entry;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
@@ -54,8 +53,7 @@ import java.util.concurrent.TimeUnit;
 @BugPattern(
     name = "DurationToLongTimeUnit",
     summary = "Unit mismatch when decomposing a Duration or Instant to call a <long, TimeUnit> API",
-    severity = ERROR,
-    providesFix = REQUIRES_HUMAN_ATTENTION)
+    severity = ERROR)
 // TODO(kak): we should probably rename this as it works for Instants/Timestamps too
 public final class DurationToLongTimeUnit extends BugChecker
     implements MethodInvocationTreeMatcher {
@@ -129,7 +127,7 @@ public final class DurationToLongTimeUnit extends BugChecker
           Optional<TimeUnit> timeUnitInArgument = getTimeUnit(timeUnitTree);
           if (timeUnitInArgument.isPresent()) {
 
-            for (Entry<Matcher<ExpressionTree>, TimeUnit> entry : MATCHERS.entrySet()) {
+            for (Map.Entry<Matcher<ExpressionTree>, TimeUnit> entry : MATCHERS.entrySet()) {
               TimeUnit timeUnitExpressedInConversion = entry.getValue();
               if (entry.getKey().matches(arg0, state)
                   && timeUnitInArgument.get() != timeUnitExpressedInConversion) {

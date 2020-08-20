@@ -16,9 +16,7 @@
 
 package com.google.errorprone.bugpatterns.threadsafety;
 
-import com.google.common.collect.ImmutableList;
 import com.google.errorprone.CompilationTestHelper;
-import org.junit.Before;
 import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -27,12 +25,8 @@ import org.junit.runners.JUnit4;
 /** {@link GuardedByChecker}Test */
 @RunWith(JUnit4.class)
 public class GuardedByCheckerTest {
-  private CompilationTestHelper compilationHelper;
-
-  @Before
-  public void setUp() {
-    compilationHelper = CompilationTestHelper.newInstance(GuardedByChecker.class, getClass());
-  }
+  private final CompilationTestHelper compilationHelper =
+      CompilationTestHelper.newInstance(GuardedByChecker.class, getClass());
 
   @Test
   public void testLocked() {
@@ -1590,28 +1584,6 @@ public class GuardedByCheckerTest {
         .doTest();
   }
 
-  @Test
-  public void qualifiedMethodWrongThis_hasNoFinding_whenMatchOnErrorsFlagSetFalse() {
-    CompilationTestHelper.newInstance(GuardedByChecker.class, getClass())
-        .setArgs(ImmutableList.of("-XepOpt:GuardedByChecker:MatchOnErrors=false"))
-        .addSourceLines(
-            "MemoryAllocatedInfoJava.java",
-            "import javax.annotation.concurrent.GuardedBy;",
-            "public class MemoryAllocatedInfoJava {",
-            "  private static final class AllocationStats {",
-            "    @GuardedBy(\"MemoryAllocatedInfoJava.this\")",
-            "    void addAllocation(long size) {}",
-            "  }",
-            "  public void addStackTrace(long size) {",
-            "    synchronized (this) {",
-            "      AllocationStats stat = new AllocationStats();",
-            "      stat.addAllocation(size);",
-            "    }",
-            "  }",
-            "}")
-        .doTest();
-  }
-
   // regression test for #426
   @Test
   public void noSuchMethod() {
@@ -1748,6 +1720,30 @@ public class GuardedByCheckerTest {
             "  void bar () {",
             "    // BUG: Diagnostic contains: should be guarded by 'mu'",
             "    new Foo().x = 11;",
+            "  }",
+            "}")
+        .doTest();
+  }
+
+  @Test
+  public void suppressionOnMethod() {
+    compilationHelper
+        .addSourceLines(
+            "Test.java",
+            "package threadsafety;",
+            "import javax.annotation.concurrent.GuardedBy;",
+            "class Test {",
+            "  final Object lock = null;",
+            "  void foo() {",
+            "    class Foo extends Object {",
+            "      @GuardedBy(\"lock\") int x;",
+            "      @SuppressWarnings(\"GuardedBy\")",
+            "      void m() {",
+            "        synchronized (lock) {",
+            "          int z = x++;",
+            "        }",
+            "      }",
+            "    }",
             "  }",
             "}")
         .doTest();

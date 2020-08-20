@@ -26,7 +26,8 @@ import com.google.errorprone.annotations.CheckReturnValue;
 import com.google.errorprone.annotations.CompatibleWith;
 import com.google.errorprone.bugpatterns.BugChecker;
 import com.google.errorprone.bugpatterns.BugChecker.MethodInvocationTreeMatcher;
-import com.google.errorprone.bugpatterns.EqualsIncompatibleType;
+import com.google.errorprone.bugpatterns.TypeCompatibilityUtils;
+import com.google.errorprone.bugpatterns.TypeCompatibilityUtils.TypeCompatibilityReport;
 import com.google.errorprone.matchers.Description;
 import com.google.errorprone.util.ASTHelpers;
 import com.google.errorprone.util.Signatures;
@@ -120,17 +121,18 @@ public class IncompatibleArgumentType extends BugChecker implements MethodInvoca
       Type argType = ASTHelpers.getType(argument);
       if (requiredType.type() != null) {
         // Report a violation for this type
-        EqualsIncompatibleType.TypeCompatibilityReport report =
-            EqualsIncompatibleType.compatibilityOfTypes(requiredType.type(), argType, state);
+        TypeCompatibilityReport report =
+            TypeCompatibilityUtils.compatibilityOfTypes(requiredType.type(), argType, state);
         if (!report.compatible()) {
-          state.reportMatch(describeViolation(argument, argType, requiredType.type(), types));
+          state.reportMatch(
+              describeViolation(argument, argType, requiredType.type(), types, state));
         }
       }
     }
   }
 
   private Description describeViolation(
-      ExpressionTree argument, Type argType, Type requiredType, Types types) {
+      ExpressionTree argument, Type argType, Type requiredType, Types types, VisitorState state) {
     // For the error message, use simple names instead of fully qualified names unless they are
     // identical.
     String sourceType = Signatures.prettyType(argType);
@@ -144,7 +146,7 @@ public class IncompatibleArgumentType extends BugChecker implements MethodInvoca
         String.format(
             "Argument '%s' should not be passed to this method. Its type %s is not"
                 + " compatible with the required type: %s.",
-            argument, sourceType, targetType);
+            state.getSourceForNode(argument), sourceType, targetType);
 
     return buildDescription(argument).setMessage(msg).build();
   }

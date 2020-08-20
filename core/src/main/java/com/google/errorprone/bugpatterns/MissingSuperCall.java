@@ -23,7 +23,6 @@ import static com.google.errorprone.matchers.Matchers.isType;
 
 import com.google.common.collect.ImmutableList;
 import com.google.errorprone.BugPattern;
-import com.google.errorprone.BugPattern.ProvidesFix;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.bugpatterns.BugChecker.AnnotationTreeMatcher;
 import com.google.errorprone.bugpatterns.BugChecker.MethodTreeMatcher;
@@ -33,7 +32,6 @@ import com.google.errorprone.util.ASTHelpers;
 import com.sun.source.tree.AnnotationTree;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.ExpressionTree;
-import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.LambdaExpressionTree;
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodInvocationTree;
@@ -49,8 +47,7 @@ import javax.lang.model.element.Modifier;
 @BugPattern(
     name = "MissingSuperCall",
     summary = "Overriding method is missing a call to overridden super method",
-    severity = ERROR,
-    providesFix = ProvidesFix.NO_FIX)
+    severity = ERROR)
 // TODO(eaftan): Add support for JDK methods that cannot be annotated, such as
 // java.lang.Object#finalize and java.lang.Object#clone.
 public class MissingSuperCall extends BugChecker
@@ -200,7 +197,7 @@ public class MissingSuperCall extends BugChecker
         if (methodSelect.getKind() == Kind.MEMBER_SELECT) {
           MemberSelectTree memberSelect = (MemberSelectTree) methodSelect;
           result =
-              isSuper(memberSelect.getExpression())
+              ASTHelpers.isSuper(memberSelect.getExpression())
                   && memberSelect.getIdentifier().contentEquals(overridingMethodName);
         }
       }
@@ -222,14 +219,4 @@ public class MissingSuperCall extends BugChecker
     return String.format("%s#%s", methodSym.owner, methodSym.getSimpleName());
   }
 
-  private static boolean isSuper(ExpressionTree tree) {
-    switch (tree.getKind()) {
-      case IDENTIFIER:
-        return ((IdentifierTree) tree).getName().contentEquals("super");
-      case MEMBER_SELECT:
-        return ((MemberSelectTree) tree).getIdentifier().contentEquals("super");
-      default:
-        return false;
-    }
-  }
 }

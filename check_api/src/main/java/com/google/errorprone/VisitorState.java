@@ -17,6 +17,8 @@
 package com.google.errorprone;
 
 import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.errorprone.util.ASTHelpers.getStartPosition;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableMap;
@@ -264,6 +266,10 @@ public class VisitorState {
   }
 
   public void reportMatch(Description description) {
+    checkNotNull(description, "Use Description.NO_MATCH to denote an absent finding.");
+    if (description == Description.NO_MATCH) {
+      return;
+    }
     // TODO(cushon): creating Descriptions with the default severity and updating them here isn't
     // ideal (we could forget to do the update), so consider removing severity from Description.
     // Instead, there could be another method on the listener that took a description and a
@@ -321,6 +327,12 @@ public class VisitorState {
 
   /**
    * Given the binary name of a class, returns the {@link Type}.
+   *
+   * <p>Prefer not to use this method for constant strings, or strings otherwise known at compile
+   * time. Instead, save the result of {@link
+   * com.google.errorprone.suppliers.Suppliers#typeFromString} as a class constant, and use its
+   * {@link Supplier#get} method to look up the Type when needed. This lookup will be faster,
+   * improving Error Prone's analysis time.
    *
    * <p>If this method returns null, the compiler doesn't have access to this type, which means that
    * if you are comparing other types to this for equality or the subtype relation, your result
@@ -562,7 +574,7 @@ public class VisitorState {
    * be used if a fix is already going to be emitted.
    */
   public List<ErrorProneToken> getOffsetTokensForNode(Tree tree) {
-    int start = ((JCTree) tree).getStartPosition();
+    int start = getStartPosition(tree);
     return ErrorProneTokens.getTokens(getSourceForNode(tree), start, context);
   }
 

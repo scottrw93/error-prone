@@ -16,12 +16,13 @@
 
 package com.google.errorprone;
 
+import static com.google.common.base.Preconditions.checkState;
+import static com.google.common.collect.ImmutableList.toImmutableList;
 import static com.google.common.truth.Truth.assertWithMessage;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.Assert.fail;
 
 import com.google.common.base.Joiner;
-import com.google.common.base.Preconditions;
 import com.google.common.base.Predicate;
 import com.google.common.collect.ImmutableList;
 import com.google.common.io.ByteStreams;
@@ -29,6 +30,7 @@ import com.google.errorprone.DiagnosticTestHelper.LookForCheckNameInDiagnostic;
 import com.google.errorprone.annotations.CheckReturnValue;
 import com.google.errorprone.bugpatterns.BugChecker;
 import com.google.errorprone.scanner.ScannerSupplier;
+import com.google.errorprone.util.RuntimeVersion;
 import com.sun.tools.javac.api.JavacTool;
 import com.sun.tools.javac.main.Main.Result;
 import java.io.BufferedWriter;
@@ -66,7 +68,12 @@ public class CompilationTestHelper {
           // print stack traces for completion failures
           "-XDdev",
           "-parameters",
-          "-XDcompilePolicy=simple");
+          "-XDcompilePolicy=simple",
+          // Don't limit errors/warnings for tests to the default of 100
+          "-Xmaxerrs",
+          "500",
+          "-Xmaxwarns",
+          "500");
 
   private final DiagnosticTestHelper diagnosticHelper;
   private final BaseErrorProneJavaCompiler compiler;
@@ -80,6 +87,8 @@ public class CompilationTestHelper {
   private boolean checkWellFormed = true;
   private LookForCheckNameInDiagnostic lookForCheckNameInDiagnostic =
       LookForCheckNameInDiagnostic.YES;
+
+  private boolean run = false;
 
   private CompilationTestHelper(ScannerSupplier scannerSupplier, String checkName, Class<?> clazz) {
     this.fileManager = new ErrorProneInMemoryFileManager(clazz);
@@ -207,11 +216,26 @@ public class CompilationTestHelper {
     return this;
   }
 
+  public CompilationTestHelper addModules(String... modules) {
+    if (!RuntimeVersion.isAtLeast9()) {
+      return this;
+    }
+    return setArgs(
+        Arrays.stream(modules)
+            .map(m -> String.format("--add-exports=%s=ALL-UNNAMED", m))
+            .collect(toImmutableList()));
+  }
+
   /**
    * Sets custom command-line arguments for the compilation. These will be appended to the default
    * compilation arguments.
    */
   public CompilationTestHelper setArgs(List<String> args) {
+    checkState(
+        extraArgs.isEmpty(),
+        "Extra args already set: old value: %s, new value: %s",
+        extraArgs,
+        args);
     this.extraArgs = ImmutableList.copyOf(args);
     return this;
   }
@@ -276,7 +300,9 @@ public class CompilationTestHelper {
 
   /** Performs a compilation and checks that the diagnostics and result match the expectations. */
   public void doTest() {
-    Preconditions.checkState(!sources.isEmpty(), "No source files to compile");
+    checkState(!sources.isEmpty(), "No source files to compile");
+    checkState(!run, "doTest should only be called once");
+    this.run = true;
     Result result = compile();
     for (Diagnostic<? extends JavaFileObject> diagnostic : diagnosticHelper.getDiagnostics()) {
       if (diagnostic.getCode().contains("error.prone.crash")) {
@@ -333,7 +359,7 @@ public class CompilationTestHelper {
     if (checkWellFormed) {
       checkWellFormed(sources, processedArgs);
     }
-    createAndInstallTempFolderForOutput(fileManager);
+    fileManager.createAndInstallTempFolderForOutput();
     return compiler
             .getTask(
                 new PrintWriter(
@@ -349,30 +375,8 @@ public class CompilationTestHelper {
         : Result.ERROR;
   }
 
-  private static void createAndInstallTempFolderForOutput(
-      ErrorProneInMemoryFileManager fileManager) {
-    Path tempDirectory;
-    try {
-      tempDirectory =
-          Files.createTempDirectory(
-              fileManager.fileSystem().getRootDirectories().iterator().next(), "");
-    } catch (IOException e) {
-      throw new UncheckedIOException(e);
-    }
-    Arrays.stream(StandardLocation.values())
-        .filter(StandardLocation::isOutputLocation)
-        .forEach(
-            outputLocation -> {
-              try {
-                fileManager.setLocationFromPaths(outputLocation, ImmutableList.of(tempDirectory));
-              } catch (IOException e) {
-                throw new UncheckedIOException(e);
-              }
-            });
-  }
-
   private void checkWellFormed(Iterable<JavaFileObject> sources, List<String> args) {
-    createAndInstallTempFolderForOutput(fileManager);
+    fileManager.createAndInstallTempFolderForOutput();
     JavaCompiler compiler = JavacTool.create();
     OutputStream outputStream = new ByteArrayOutputStream();
     List<String> remainingArgs = null;

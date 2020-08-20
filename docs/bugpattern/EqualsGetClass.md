@@ -5,7 +5,9 @@ Such code should be modified to use an `instanceof` test instead of `getClass`.
 
 ## Extending a value class to add attributes
 
-The most common objection objection to this rule arises from a scenario like the
+TL;DR: use composition rather than inheritance to add fields to value types.
+
+The most common objection to this rule arises from a scenario like the
 following:
 
 ```
@@ -67,7 +69,7 @@ and not worth propagating and legitimizing.
 
 ## More information
 
-See [Effective Java, 3rd Edition, Item 10][ej3e-10] ("Obey the general contract
-when overriding equals").
+See [Effective Java 3rd Edition §10][ej3e-10] ("Obey the general contract when
+overriding equals").
 
 [ej3e-10]: https://books.google.com/books?id=BIpDDwAAQBAJ

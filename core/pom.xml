@@ -31,7 +31,7 @@
   <parent>
     <groupId>com.google.errorprone</groupId>
     <artifactId>error_prone_parent</artifactId>
-    <version>2.3.5-SNAPSHOT</version>
+    <version>2.4.1-SNAPSHOT</version>
   </parent>
 
   <name>error-prone library</name>
@@ -111,7 +111,7 @@
     <dependency>
       <!-- GPLv2 with Classpath Exception -->
       <groupId>org.checkerframework</groupId>
-      <artifactId>dataflow</artifactId>
+      <artifactId>dataflow-shaded</artifactId>
       <version>${dataflow.version}</version>
     </dependency>
     <dependency>
@@ -123,9 +123,9 @@
     <dependency>
       <!-- Apache 2.0 -->
       <groupId>com.google.auto.value</groupId>
-      <artifactId>auto-value</artifactId>
+      <artifactId>auto-value-annotations</artifactId>
       <version>${autovalue.version}</version>
-      <scope>provided</scope>
+      <scope>compile</scope>
     </dependency>
     <dependency>
       <!-- Apache 2.0 -->
@@ -297,9 +297,9 @@
     <dependency>
       <!-- Apache 2.0 -->
       <groupId>com.google.auto.service</groupId>
-      <artifactId>auto-service</artifactId>
-      <version>1.0-rc4</version>
-      <scope>provided</scope>
+      <artifactId>auto-service-annotations</artifactId>
+      <version>${autoservice.version}</version>
+      <scope>compile</scope>
     </dependency>
     <dependency>
       <!-- Apache 2.0 -->
@@ -351,6 +351,11 @@
       <version>1.0.5</version>
       <scope>test</scope>
     </dependency>
+    <dependency>
+      <groupId>org.threeten</groupId>
+      <artifactId>threeten-extra</artifactId>
+      <version>1.5.0</version>
+    </dependency>
   </dependencies>
 
   <build>
@@ -362,6 +367,24 @@
       </extension>
     </extensions>
     <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <annotationProcessorPaths>
+            <path>
+              <groupId>com.google.auto.value</groupId>
+              <artifactId>auto-value</artifactId>
+              <version>${autovalue.version}</version>
+            </path>
+            <path>
+              <groupId>com.google.auto.service</groupId>
+              <artifactId>auto-service</artifactId>
+              <version>${autoservice.version}</version>
+            </path>
+          </annotationProcessorPaths>
+        </configuration>
+      </plugin>
       <!-- Include the @BugPattern annotation in the main distribution
            so users have only one jar to add to their classpath. -->
       <plugin>
@@ -389,7 +412,11 @@
                   <include>org.pcollections:pcollections</include>
                   <include>com.google.guava:guava</include>
                   <include>com.google.guava:failureaccess</include>
+                  <include>com.github.ben-manes.caffeine:caffeine</include>
+                  <include>io.github.java-diff-utils:java-diff-utils</include>
                   <include>com.google.auto:auto-common</include>
+                  <include>com.google.auto.value:auto-value-annotations</include>
+                  <include>com.google.auto.service:auto-service-annotations</include>
                   <include>com.google.code.findbugs:jsr305</include>
                   <include>com.google.protobuf:protobuf-java</include>
                 </includes>
@@ -448,6 +475,33 @@
           <version>${guava.version}</version>
         </dependency>
       </dependencies>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-compiler-plugin</artifactId>
+            <configuration>
+              <annotationProcessorPaths>
+                <path>
+                  <groupId>com.google.auto.value</groupId>
+                  <artifactId>auto-value</artifactId>
+                  <version>${autovalue.version}</version>
+                </path>
+                <path>
+                  <groupId>com.google.auto.service</groupId>
+                  <artifactId>auto-service</artifactId>
+                  <version>${autoservice.version}</version>
+                </path>
+                <path>
+                  <groupId>com.google.errorprone</groupId>
+                  <artifactId>error_prone_docgen_processor</artifactId>
+                  <version>${project.version}</version>
+                </path>
+              </annotationProcessorPaths>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
     </profile>
     <profile>
       <id>java-8</id>

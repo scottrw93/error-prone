@@ -21,7 +21,7 @@
   <parent>
     <groupId>com.google.errorprone</groupId>
     <artifactId>error_prone_parent</artifactId>
-    <version>2.3.5-SNAPSHOT</version>
+    <version>2.4.1-SNAPSHOT</version>
   </parent>
 
   <name>@BugPattern annotation</name>
@@ -50,7 +50,7 @@
     <dependency>
       <groupId>com.google.truth</groupId>
       <artifactId>truth</artifactId>
-      <version>0.45</version>
+      <version>${truth.version}</version>
       <scope>test</scope>
     </dependency>
   </dependencies>

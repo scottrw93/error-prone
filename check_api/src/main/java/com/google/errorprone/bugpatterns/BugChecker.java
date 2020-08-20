@@ -19,7 +19,6 @@ package com.google.errorprone.bugpatterns;
 import static com.google.common.base.MoreObjects.firstNonNull;
 import static com.google.common.collect.ImmutableSet.toImmutableSet;
 
-import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterables;
 import com.google.errorprone.BugCheckerInfo;
 import com.google.errorprone.BugPattern.SeverityLevel;
@@ -82,6 +81,7 @@ import com.sun.source.tree.UnionTypeTree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.tree.WhileLoopTree;
 import com.sun.source.tree.WildcardTree;
+import com.sun.source.util.TreePathScanner;
 import com.sun.tools.javac.code.Symbol;
 import com.sun.tools.javac.tree.JCTree;
 import com.sun.tools.javac.util.JCDiagnostic.DiagnosticPosition;
@@ -170,13 +170,10 @@ public abstract class BugChecker implements Suppressible, Serializable {
     return buildDescription(node).addFix(fix).build();
   }
 
-  /**
-   * Returns a Description builder, which allows you to customize the diagnostic with a custom
-   * message or multiple fixes.
-   */
+  /** Helper to create a Description for the common case where there is an {@link Optional} fix. */
   @CheckReturnValue
-  protected Description.Builder buildDescription(Tree node) {
-    return buildDescriptionFromChecker(node, this);
+  protected Description describeMatch(DiagnosticPosition position, Optional<? extends Fix> fix) {
+    return buildDescription(position).addFix(fix).build();
   }
 
   /**
@@ -184,8 +181,17 @@ public abstract class BugChecker implements Suppressible, Serializable {
    * message or multiple fixes.
    */
   @CheckReturnValue
-  protected Description.Builder buildDescription(DiagnosticPosition position) {
-    return buildDescriptionFromChecker(position, this);
+  public Description.Builder buildDescription(Tree node) {
+    return Description.builder(node, canonicalName(), linkUrl(), defaultSeverity(), message());
+  }
+
+  /**
+   * Returns a Description builder, which allows you to customize the diagnostic with a custom
+   * message or multiple fixes.
+   */
+  @CheckReturnValue
+  public Description.Builder buildDescription(DiagnosticPosition position) {
+    return Description.builder(position, canonicalName(), linkUrl(), defaultSeverity(), message());
   }
 
   /**
@@ -194,57 +200,8 @@ public abstract class BugChecker implements Suppressible, Serializable {
    */
   // This overload exists purely to disambiguate for JCTree.
   @CheckReturnValue
-  protected Description.Builder buildDescription(JCTree tree) {
-    return buildDescriptionFromChecker((DiagnosticPosition) tree, this);
-  }
-
-  /**
-   * Returns a new builder for {@link Description}s.
-   *
-   * @param node the node where the error is
-   * @param checker the {@code BugChecker} instance that is producing this {@code Description}
-   */
-  @CheckReturnValue
-  public static Description.Builder buildDescriptionFromChecker(Tree node, BugChecker checker) {
-    return Description.builder(
-        Preconditions.checkNotNull(node),
-        checker.canonicalName(),
-        checker.linkUrl(),
-        checker.defaultSeverity(),
-        checker.message());
-  }
-
-  /**
-   * Returns a new builder for {@link Description}s.
-   *
-   * @param position the position of the error
-   * @param checker the {@code BugChecker} instance that is producing this {@code Description}
-   */
-  @CheckReturnValue
-  public static Description.Builder buildDescriptionFromChecker(
-      DiagnosticPosition position, BugChecker checker) {
-    return Description.builder(
-        position,
-        checker.canonicalName(),
-        checker.linkUrl(),
-        checker.defaultSeverity(),
-        checker.message());
-  }
-
-  /**
-   * Returns a new builder for {@link Description}s.
-   *
-   * @param tree the tree where the error is
-   * @param checker the {@code BugChecker} instance that is producing this {@code Description}
-   */
-  @CheckReturnValue
-  public static Description.Builder buildDescriptionFromChecker(JCTree tree, BugChecker checker) {
-    return Description.builder(
-        (DiagnosticPosition) tree,
-        checker.canonicalName(),
-        checker.linkUrl(),
-        checker.defaultSeverity(),
-        checker.message());
+  public Description.Builder buildDescription(JCTree tree) {
+    return Description.builder(tree, canonicalName(), linkUrl(), defaultSeverity(), message());
   }
 
   @Override
@@ -541,5 +498,15 @@ public abstract class BugChecker implements Suppressible, Serializable {
         defaultSeverity(),
         supportsSuppressWarnings(),
         customSuppressionAnnotations());
+  }
+
+  /** A {@link TreePathScanner} which skips trees which are suppressed for this check. */
+  protected class SuppressibleTreePathScanner<A, B> extends TreePathScanner<A, B> {
+    @Override
+    public final A scan(Tree tree, B b) {
+      boolean isSuppressible =
+          tree instanceof ClassTree || tree instanceof MethodTree || tree instanceof VariableTree;
+      return isSuppressible && isSuppressed(tree) ? null : super.scan(tree, b);
+    }
   }
 }

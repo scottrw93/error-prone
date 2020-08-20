@@ -16,6 +16,8 @@
 
 package com.google.errorprone;
 
+import static com.google.common.base.Preconditions.checkState;
+import static com.google.common.collect.ImmutableList.toImmutableList;
 import static com.google.common.truth.Truth.assertAbout;
 import static com.google.common.truth.Truth.assertThat;
 import static com.google.testing.compile.JavaSourceSubjectFactory.javaSource;
@@ -35,6 +37,7 @@ import com.google.errorprone.fixes.Fix;
 import com.google.errorprone.matchers.Description;
 import com.google.errorprone.scanner.ErrorProneScanner;
 import com.google.errorprone.scanner.ErrorProneScannerTransformer;
+import com.google.errorprone.util.RuntimeVersion;
 import com.google.googlejavaformat.java.Formatter;
 import com.google.googlejavaformat.java.FormatterException;
 import com.google.testing.compile.JavaFileObjects;
@@ -48,6 +51,7 @@ import com.sun.tools.javac.util.Context;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.FileAlreadyExistsException;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -140,6 +144,8 @@ public class BugCheckerRefactoringTestHelper {
   private boolean allowBreakingChanges = false;
   private String importOrder = "static-first";
 
+  private boolean run = false;
+
   private BugCheckerRefactoringTestHelper(BugChecker refactoringBugChecker, Class<?> clazz) {
     this.refactoringBugChecker = refactoringBugChecker;
     this.fileManager = new ErrorProneInMemoryFileManager(clazz);
@@ -148,6 +154,17 @@ public class BugCheckerRefactoringTestHelper {
   public static BugCheckerRefactoringTestHelper newInstance(
       BugChecker refactoringBugChecker, Class<?> clazz) {
     return new BugCheckerRefactoringTestHelper(refactoringBugChecker, clazz);
+  }
+
+  public static BugCheckerRefactoringTestHelper newInstance(
+      Class<? extends BugChecker> checkerClass, Class<?> clazz) {
+    BugChecker checker;
+    try {
+      checker = checkerClass.getDeclaredConstructor().newInstance();
+    } catch (ReflectiveOperationException e) {
+      throw new LinkageError(e.getMessage(), e);
+    }
+    return newInstance(checker, clazz);
   }
 
   public BugCheckerRefactoringTestHelper.ExpectOutput addInput(String inputFilename) {
@@ -162,6 +179,22 @@ public class BugCheckerRefactoringTestHelper {
 
   public BugCheckerRefactoringTestHelper setFixChooser(FixChooser chooser) {
     this.fixChooser = chooser;
+    return this;
+  }
+
+  public BugCheckerRefactoringTestHelper addModules(String... modules) {
+    if (!RuntimeVersion.isAtLeast9()) {
+      return this;
+    }
+    return setArgs(
+        Arrays.stream(modules)
+            .map(m -> String.format("--add-exports=%s=ALL-UNNAMED", m))
+            .collect(toImmutableList()));
+  }
+
+  public BugCheckerRefactoringTestHelper setArgs(ImmutableList<String> args) {
+    checkState(options.isEmpty());
+    this.options = args;
     return this;
   }
 
@@ -186,6 +219,8 @@ public class BugCheckerRefactoringTestHelper {
   }
 
   public void doTest(TestMode testMode) {
+    checkState(!run, "doTest should only be called once");
+    this.run = true;
     for (Map.Entry<JavaFileObject, JavaFileObject> entry : sources.entrySet()) {
       try {
         runTestOnPair(entry.getKey(), entry.getValue(), testMode);
@@ -225,6 +260,7 @@ public class BugCheckerRefactoringTestHelper {
       throw new IllegalArgumentException("Exception during argument processing: " + e);
     }
     context.put(ErrorProneOptions.class, errorProneOptions);
+    fileManager.createAndInstallTempFolderForOutput();
     JavacTaskImpl task =
         (JavacTaskImpl)
             tool.getTask(

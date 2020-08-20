@@ -25,6 +25,7 @@ import static com.google.errorprone.matchers.Matchers.instanceMethod;
 import static com.google.errorprone.matchers.Matchers.receiverOfInvocation;
 import static com.google.errorprone.matchers.Matchers.staticMethod;
 import static com.google.errorprone.util.ASTHelpers.getReceiver;
+import static com.google.errorprone.util.ASTHelpers.getStartPosition;
 import static com.google.errorprone.util.ASTHelpers.getType;
 import static com.google.errorprone.util.ASTHelpers.isConsideredFinal;
 import static com.google.errorprone.util.ASTHelpers.isSameType;
@@ -32,7 +33,6 @@ import static com.google.errorprone.util.ASTHelpers.isSameType;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 import com.google.errorprone.BugPattern;
-import com.google.errorprone.BugPattern.ProvidesFix;
 import com.google.errorprone.ErrorProneFlags;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.bugpatterns.BugChecker.CompilationUnitTreeMatcher;
@@ -58,7 +58,6 @@ import com.sun.source.util.TreePathScanner;
 import com.sun.tools.javac.code.Symbol;
 import com.sun.tools.javac.code.Symbol.MethodSymbol;
 import com.sun.tools.javac.code.Type;
-import com.sun.tools.javac.tree.JCTree;
 import com.sun.tools.javac.tree.JCTree.JCFieldAccess;
 import java.util.Arrays;
 import java.util.EnumSet;
@@ -73,8 +72,7 @@ import javax.annotation.Nullable;
 @BugPattern(
     name = "ProtoFieldNullComparison",
     summary = "Protobuf fields cannot be null.",
-    severity = ERROR,
-    providesFix = ProvidesFix.REQUIRES_HUMAN_ATTENTION)
+    severity = ERROR)
 public class ProtoFieldNullComparison extends BugChecker implements CompilationUnitTreeMatcher {
 
   private static final String PROTO_SUPER_CLASS = "com.google.protobuf.GeneratedMessage";
@@ -501,13 +499,11 @@ public class ProtoFieldNullComparison extends BugChecker implements CompilationU
             .map(
                 r -> {
                   MethodInvocationTree receiver = (MethodInvocationTree) getReceiver(tree);
-                  return SuggestedFix.builder()
-                      .replace(
-                          tree,
-                          String.format(
-                              "%s(%s).isTrue()",
-                              state.getSourceForNode(receiver.getMethodSelect()), r))
-                      .build();
+                  return SuggestedFix.replace(
+                      tree,
+                      String.format(
+                          "%s(%s).isTrue()",
+                          state.getSourceForNode(receiver.getMethodSelect()), r));
                 })
             .orElse(SuggestedFix.builder().build());
       }
@@ -521,7 +517,7 @@ public class ProtoFieldNullComparison extends BugChecker implements CompilationU
             .getHazzer(/* negated= */ false, state)
             .map(
                 r -> {
-                  int startPos = ((JCTree) methodInvocationTree).getStartPosition();
+                  int startPos = getStartPosition(methodInvocationTree);
                   return SuggestedFix.builder()
                       .replace(getLast(methodInvocationTree.getArguments()), r)
                       .replace(startPos, startPos + "assertNotNull".length(), "assertTrue")

@@ -19,16 +19,17 @@ package com.google.errorprone.bugpatterns;
 import static com.google.common.base.CaseFormat.LOWER_CAMEL;
 import static com.google.common.base.CaseFormat.UPPER_UNDERSCORE;
 import static com.google.common.collect.Iterables.getOnlyElement;
-import static com.google.errorprone.BugPattern.ProvidesFix.REQUIRES_HUMAN_ATTENTION;
 import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
 import static com.google.errorprone.fixes.SuggestedFixes.prettyType;
 import static com.google.errorprone.matchers.Description.NO_MATCH;
 import static com.google.errorprone.util.ASTHelpers.getModifiers;
 import static com.google.errorprone.util.ASTHelpers.getReceiver;
+import static com.google.errorprone.util.ASTHelpers.getStartPosition;
 import static com.google.errorprone.util.ASTHelpers.getSymbol;
 import static com.google.errorprone.util.ASTHelpers.getType;
 import static java.util.stream.Collectors.joining;
 
+import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Streams;
 import com.google.errorprone.BugPattern;
 import com.google.errorprone.VisitorState;
@@ -57,7 +58,6 @@ import com.sun.source.util.TreePathScanner;
 import com.sun.tools.javac.code.Symbol;
 import com.sun.tools.javac.code.Type;
 import com.sun.tools.javac.code.TypeTag;
-import com.sun.tools.javac.tree.JCTree;
 import java.util.Objects;
 import java.util.function.Predicate;
 import javax.lang.model.element.ElementKind;
@@ -70,8 +70,7 @@ import javax.lang.model.element.Modifier;
         "Returning a lambda from a helper method or saving it in a constant is unnecessary; prefer"
             + " to implement the functional interface method directly and use a method reference"
             + " instead.",
-    severity = WARNING,
-    providesFix = REQUIRES_HUMAN_ATTENTION)
+    severity = WARNING)
 public class UnnecessaryLambda extends BugChecker
     implements MethodTreeMatcher, VariableTreeMatcher {
 
@@ -163,6 +162,14 @@ public class UnnecessaryLambda extends BugChecker
     return describeMatch(tree, fix.build());
   }
 
+  // Allowlist of core packages to emit fixes for functional interfaces in. User-defined functional
+  // interfaces are slightly more likely to have documentation value.
+  private static final ImmutableSet<String> PACKAGES_TO_FIX =
+      ImmutableSet.of(
+          "com.google.common.base",
+          "com.google.errorprone.matchers",
+          "java.util.function",
+          "java.lang");
   /**
    * Check if the only methods invoked on the functional interface type are the descriptor method,
    * e.g. don't rewrite uses of {@link Predicate} in compilation units that call other methods like
@@ -170,6 +177,9 @@ public class UnnecessaryLambda extends BugChecker
    */
   boolean canFix(Tree type, Symbol sym, VisitorState state) {
     Symbol descriptor = state.getTypes().findDescriptorSymbol(getType(type).asElement());
+    if (!PACKAGES_TO_FIX.contains(descriptor.packge().getQualifiedName().toString())) {
+      return false;
+    }
     class Scanner extends TreePathScanner<Void, Void> {
 
       boolean fixable = true;
@@ -241,7 +251,7 @@ public class UnnecessaryLambda extends BugChecker
         && ((MemberSelectTree) parent).getExpression().equals(node)) {
       Tree receiver = node.getKind() == Tree.Kind.IDENTIFIER ? null : getReceiver(node);
       fix.replace(
-          receiver != null ? state.getEndPosition(receiver) : ((JCTree) node).getStartPosition(),
+          receiver != null ? state.getEndPosition(receiver) : getStartPosition(node),
           state.getEndPosition(parent),
           (receiver != null ? "." : "") + newName);
     } else {
@@ -261,7 +271,7 @@ public class UnnecessaryLambda extends BugChecker
         }
 
         @Override
-        public LambdaExpressionTree visitBlock(BlockTree node, Void aVoid) {
+        public LambdaExpressionTree visitBlock(BlockTree node, Void unused) {
           // when processing a method body, only consider methods with a single `return` statement
           // that returns a method
           return node.getStatements().size() == 1
@@ -270,17 +280,17 @@ public class UnnecessaryLambda extends BugChecker
         }
 
         @Override
-        public LambdaExpressionTree visitReturn(ReturnTree node, Void aVoid) {
+        public LambdaExpressionTree visitReturn(ReturnTree node, Void unused) {
           return node.getExpression() != null ? node.getExpression().accept(this, null) : null;
         }
 
         @Override
-        public LambdaExpressionTree visitTypeCast(TypeCastTree node, Void aVoid) {
+        public LambdaExpressionTree visitTypeCast(TypeCastTree node, Void unused) {
           return node.getExpression().accept(this, null);
         }
 
         @Override
-        public LambdaExpressionTree visitParenthesized(ParenthesizedTree node, Void aVoid) {
+        public LambdaExpressionTree visitParenthesized(ParenthesizedTree node, Void unused) {
           return node.getExpression().accept(this, null);
         }
       };

@@ -21,7 +21,6 @@ import static com.google.errorprone.matchers.Matchers.anyOf;
 import static com.google.errorprone.matchers.method.MethodMatchers.staticMethod;
 
 import com.google.errorprone.BugPattern;
-import com.google.errorprone.BugPattern.ProvidesFix;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.bugpatterns.BugChecker.MethodInvocationTreeMatcher;
 import com.google.errorprone.fixes.SuggestedFix;
@@ -38,8 +37,7 @@ import java.util.List;
 @BugPattern(
     name = "MockitoUsage",
     summary = "Missing method call for verify(mock) here",
-    severity = ERROR,
-    providesFix = ProvidesFix.REQUIRES_HUMAN_ATTENTION)
+    severity = ERROR)
 public class MockitoUsage extends BugChecker implements MethodInvocationTreeMatcher {
 
   private static final String MESSAGE_FORMAT = "Missing method call for %s here";
@@ -99,7 +97,8 @@ public class MockitoUsage extends BugChecker implements MethodInvocationTreeMatc
       builder.addFix(
           SuggestedFix.builder()
               .addStaticImport("org.mockito.Mockito.verifyZeroInteractions")
-              .replace(tree, String.format("verifyZeroInteractions(%s)", mock))
+              .replace(
+                  tree, String.format("verifyZeroInteractions(%s)", state.getSourceForNode(mock)))
               .build());
     }
     // Always suggest the naive semantics-preserving option, which is just to

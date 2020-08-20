@@ -16,8 +16,9 @@
 
 package com.google.errorprone.bugpatterns;
 
+import static com.google.common.collect.Iterables.getOnlyElement;
+
 import com.google.errorprone.BugPattern;
-import com.google.errorprone.BugPattern.ProvidesFix;
 import com.google.errorprone.BugPattern.SeverityLevel;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.annotations.RestrictedApi;
@@ -35,8 +36,10 @@ import com.sun.source.tree.MemberReferenceTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.Tree;
-import com.sun.tools.javac.code.Symbol;
 import com.sun.tools.javac.code.Symbol.MethodSymbol;
+import com.sun.tools.javac.code.Symbol.TypeSymbol;
+import com.sun.tools.javac.code.Type;
+import com.sun.tools.javac.code.Types;
 import com.sun.tools.javac.tree.JCTree.JCCompilationUnit;
 import java.util.Optional;
 import java.util.regex.Pattern;
@@ -47,16 +50,21 @@ import javax.lang.model.type.MirroredTypesException;
 /** Check for non-whitelisted callers to RestrictedApiChecker. */
 @BugPattern(
     name = "RestrictedApiChecker",
-    summary = " Check for non-whitelisted callers to RestrictedApiChecker.",
+    summary = "Check for non-whitelisted callers to RestrictedApiChecker.",
     severity = SeverityLevel.ERROR,
     suppressionAnnotations = {},
-    disableable = false,
-    providesFix = ProvidesFix.REQUIRES_HUMAN_ATTENTION)
+    disableable = false)
 public class RestrictedApiChecker extends BugChecker
     implements MethodInvocationTreeMatcher,
         NewClassTreeMatcher,
         AnnotationTreeMatcher,
         MemberReferenceTreeMatcher {
+  /**
+   * The name to use when reporting findings. It's important that this DOES NOT match {@link
+   * #canonicalName()}, because otherwise changing the severity won't work.
+   */
+  // TODO(b/151087021): rationalize this.
+  private static final String CHECK_NAME = "RestrictedApi";
 
   /**
    * Validates a {@code @RestrictedApi} annotation and that the declared restriction makes sense.
@@ -80,41 +88,81 @@ public class RestrictedApiChecker extends BugChecker
 
   @Override
   public Description matchMethodInvocation(MethodInvocationTree tree, VisitorState state) {
-    return checkMethodUse(tree, state);
+    return checkMethodUse(ASTHelpers.getSymbol(tree), tree, state);
   }
 
   @Override
   public Description matchMemberReference(MemberReferenceTree tree, VisitorState state) {
-    return checkMethodUse(tree, state);
+    return checkMethodUse(ASTHelpers.getSymbol(tree), tree, state);
+  }
+
+  /**
+   * Returns the constructor type for the supplied constructor symbol of an anonymous class object
+   * that can be matched with a corresponding constructor in its direct superclass. If the anonymous
+   * object creation expression is qualified, i.e, is of the form {@code enclosingExpression.new
+   * identifier (arguments)} the constructor type includes an implicit first parameter with type
+   * matching enclosingExpression. In such a case a matching constructor type is created by dropping
+   * this implicit parameter.
+   */
+  private static Type dropImplicitEnclosingInstanceParameter(
+      NewClassTree tree, VisitorState state, MethodSymbol anonymousClassConstructor) {
+    if (tree.getEnclosingExpression() == null) {
+      return anonymousClassConstructor.asType();
+    }
+    com.sun.tools.javac.util.List<Type> origParams =
+        anonymousClassConstructor.asType().getParameterTypes();
+    com.sun.tools.javac.util.List<Type> newParams =
+        com.sun.tools.javac.util.List.from(origParams.subList(1, origParams.size()));
+    return state
+        .getTypes()
+        .createMethodTypeWithParameters(anonymousClassConstructor.asType(), newParams);
+  }
+
+  private static MethodSymbol superclassConstructorSymbol(NewClassTree tree, VisitorState state) {
+    MethodSymbol constructor = ASTHelpers.getSymbol(tree);
+    Types types = state.getTypes();
+    TypeSymbol superclass = types.supertype(constructor.enclClass().asType()).asElement();
+    Type anonymousClassType = constructor.enclClass().asType();
+    Type matchingConstructorType = dropImplicitEnclosingInstanceParameter(tree, state, constructor);
+
+    return (MethodSymbol)
+        getOnlyElement(
+            superclass
+                .members()
+                .getSymbols(
+                    member ->
+                        member.isConstructor()
+                            && types.hasSameArgs(
+                                member.asMemberOf(anonymousClassType, types).asType(),
+                                matchingConstructorType)));
   }
 
   @Override
   public Description matchNewClass(NewClassTree tree, VisitorState state) {
-    // TODO(bangert): Handle implicit super() calls in generated constructors
-    return checkRestriction(ASTHelpers.getAnnotation(tree, RestrictedApi.class), tree, state);
+    if (tree.getClassBody() != null) {
+      return checkMethodUse(superclassConstructorSymbol(tree, state), tree, state);
+    } else {
+      return checkRestriction(ASTHelpers.getAnnotation(tree, RestrictedApi.class), tree, state);
+    }
   }
 
-  private Description checkMethodUse(ExpressionTree tree, VisitorState state) {
-    RestrictedApi annotation = ASTHelpers.getAnnotation(tree, RestrictedApi.class);
+  private Description checkMethodUse(
+      MethodSymbol method, ExpressionTree where, VisitorState state) {
+    RestrictedApi annotation = ASTHelpers.getAnnotation(method, RestrictedApi.class);
     if (annotation != null) {
-      return checkRestriction(annotation, tree, state);
-    }
-
-    Symbol sym = ASTHelpers.getSymbol(tree);
-    if (!(sym instanceof MethodSymbol)) {
-      return Description.NO_MATCH; // This shouldn't happen, but has. (See b/33758055)
+      return checkRestriction(annotation, where, state);
     }
 
     // Try each super method for @RestrictedApi
     Optional<MethodSymbol> superWithRestrictedApi =
-        ASTHelpers.findSuperMethods((MethodSymbol) sym, state.getTypes()).stream()
+        ASTHelpers.findSuperMethods(method, state.getTypes()).stream()
             .filter((t) -> ASTHelpers.hasAnnotation(t, RestrictedApi.class, state))
             .findFirst();
     if (!superWithRestrictedApi.isPresent()) {
       return Description.NO_MATCH;
     }
     return checkRestriction(
-        ASTHelpers.getAnnotation(superWithRestrictedApi.get(), RestrictedApi.class), tree, state);
+        ASTHelpers.getAnnotation(superWithRestrictedApi.get(), RestrictedApi.class), where, state);
   }
 
   private Description checkRestriction(
@@ -124,7 +172,7 @@ public class RestrictedApiChecker extends BugChecker
     }
     if (!restriction.allowedOnPath().isEmpty()) {
       JCCompilationUnit compilationUnit = (JCCompilationUnit) state.getPath().getCompilationUnit();
-      String path = ASTHelpers.getFileName(compilationUnit);
+      String path = compilationUnit.getSourceFile().toUri().toString();
       if (Pattern.matches(restriction.allowedOnPath(), path)) {
         return Description.NO_MATCH;
       }
@@ -137,9 +185,7 @@ public class RestrictedApiChecker extends BugChecker
       // TODO(bangert): Clarify this message if possible.
       return buildDescription(where)
           .setMessage(
-              "The Restricted API (["
-                  + restriction.checkerName()
-                  + "]"
+              "The Restricted API ("
                   + restriction.explanation()
                   + ") call here is both whitelisted-as-warning and "
                   + "silently whitelisted. "
@@ -153,7 +199,7 @@ public class RestrictedApiChecker extends BugChecker
 
     Description.Builder description =
         Description.builder(
-            where, restriction.checkerName(), restriction.link(), level, restriction.explanation());
+            where, CHECK_NAME, restriction.link(), level, restriction.explanation());
     return description.build();
   }
 

@@ -16,7 +16,6 @@
 
 package com.google.errorprone.bugpatterns;
 
-import com.google.common.collect.ImmutableList;
 import com.google.errorprone.CompilationTestHelper;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -142,6 +141,22 @@ public class ReturnValueIgnoredTest {
   }
 
   @Test
+  public void issue1565_enumDeclaration() {
+    compilationHelper
+        .addSourceLines(
+            "Test.java",
+            "import java.util.function.Function;",
+            "enum Test {",
+            "  A;",
+            "  void f(Function<Integer, Integer> f) {",
+            "    // BUG: Diagnostic contains: ReturnValueIgnored",
+            "    f.apply(0);",
+            "  }",
+            "}")
+        .doTest();
+  }
+
+  @Test
   public void issue1363_dateTimeFormatterBuilder() {
     compilationHelper
         .addSourceLines(
@@ -195,23 +210,6 @@ public class ReturnValueIgnoredTest {
             "    p.containsKey(null);",
             "  }",
             "}")
-        .doTest();
-  }
-
-  @Test
-  public void collectionContains_flagOff() {
-    compilationHelper
-        .addSourceLines(
-            "Test.java",
-            "abstract class Test {",
-            "  void test(java.util.List p) {",
-            "    p.contains(null);",
-            "  }",
-            "  void test2(java.util.Map p) {",
-            "    p.containsKey(null);",
-            "  }",
-            "}")
-        .setArgs(ImmutableList.of("-XepOpt:ReturnValueIgnored:MatchContains=false"))
         .doTest();
   }
 }

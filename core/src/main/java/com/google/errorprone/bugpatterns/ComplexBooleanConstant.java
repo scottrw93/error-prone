@@ -15,7 +15,6 @@
  */
 package com.google.errorprone.bugpatterns;
 
-import static com.google.errorprone.BugPattern.ProvidesFix.REQUIRES_HUMAN_ATTENTION;
 import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
 
 import com.google.errorprone.BugPattern;
@@ -35,8 +34,7 @@ import java.util.Objects;
 @BugPattern(
     name = "ComplexBooleanConstant",
     summary = "Non-trivial compile time constant boolean expressions shouldn't be used.",
-    severity = WARNING,
-    providesFix = REQUIRES_HUMAN_ATTENTION)
+    severity = WARNING)
 public class ComplexBooleanConstant extends BugChecker implements BinaryTreeMatcher {
 
   @Override
@@ -63,7 +61,7 @@ public class ComplexBooleanConstant extends BugChecker implements BinaryTreeMatc
     SimpleTreeVisitor<Boolean, Void> boolValue =
         new SimpleTreeVisitor<Boolean, Void>() {
           @Override
-          public Boolean visitLiteral(LiteralTree node, Void aVoid) {
+          public Boolean visitLiteral(LiteralTree node, Void unused) {
             if (node.getValue() instanceof Boolean) {
               return (Boolean) node.getValue();
             }
@@ -71,7 +69,7 @@ public class ComplexBooleanConstant extends BugChecker implements BinaryTreeMatc
           }
 
           @Override
-          public Boolean visitUnary(UnaryTree node, Void aVoid) {
+          public Boolean visitUnary(UnaryTree node, Void unused) {
             Boolean r = node.getExpression().accept(this, null);
             if (r == null) {
               return null;

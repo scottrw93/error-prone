@@ -23,13 +23,13 @@ import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Streams;
 import com.google.errorprone.BugPattern;
-import com.google.errorprone.BugPattern.ProvidesFix;
 import com.google.errorprone.BugPattern.StandardTags;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.bugpatterns.BugChecker.ClassTreeMatcher;
 import com.google.errorprone.bugpatterns.BugChecker.MethodTreeMatcher;
 import com.google.errorprone.bugpatterns.TypeParameterNaming.TypeParameterNamingClassification;
 import com.google.errorprone.fixes.SuggestedFix;
+import com.google.errorprone.fixes.SuggestedFixes;
 import com.google.errorprone.matchers.Description;
 import com.google.errorprone.util.ASTHelpers;
 import com.sun.source.tree.ClassTree;
@@ -60,8 +60,7 @@ import java.util.stream.Collectors;
     name = "TypeNameShadowing",
     summary = "Type parameter declaration shadows another named type",
     severity = WARNING,
-    tags = StandardTags.STYLE,
-    providesFix = ProvidesFix.REQUIRES_HUMAN_ATTENTION)
+    tags = StandardTags.STYLE)
 public class TypeNameShadowing extends BugChecker implements MethodTreeMatcher, ClassTreeMatcher {
 
   @Override
@@ -157,7 +156,7 @@ public class TypeNameShadowing extends BugChecker implements MethodTreeMatcher, 
         .filter(tv -> TypeParameterNamingClassification.classify(tv.name.toString()).isValidName())
         .map(
             tv ->
-                TypeParameterShadowing.renameTypeVariable(
+                SuggestedFixes.renameTypeParameter(
                     TypeParameterShadowing.typeParameterInList(typeParameters, tv),
                     tree,
                     TypeParameterShadowing.replacementTypeVarName(tv.name, visibleNames),

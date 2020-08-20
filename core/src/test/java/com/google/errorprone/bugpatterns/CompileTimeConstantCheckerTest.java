@@ -16,8 +16,9 @@
 
 package com.google.errorprone.bugpatterns;
 
+import com.google.common.collect.ImmutableList;
 import com.google.errorprone.CompilationTestHelper;
-import org.junit.Before;
+import com.google.errorprone.annotations.CompileTimeConstant;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -25,14 +26,8 @@ import org.junit.runners.JUnit4;
 /** {@link CompileTimeConstantChecker}Test */
 @RunWith(JUnit4.class)
 public class CompileTimeConstantCheckerTest {
-
-  private CompilationTestHelper compilationHelper;
-
-  @Before
-  public void setUp() {
-    compilationHelper =
-        CompilationTestHelper.newInstance(CompileTimeConstantChecker.class, getClass());
-  }
+  private final CompilationTestHelper compilationHelper =
+      CompilationTestHelper.newInstance(CompileTimeConstantChecker.class, getClass());
 
   @Test
   public void test_SuppressWarningsDoesntWork() {
@@ -269,17 +264,26 @@ public class CompileTimeConstantCheckerTest {
         .doTest();
   }
 
+  /** Holder for a method we wish to reference from a test. */
+  public static class Holder {
+    public static void m(String s, @CompileTimeConstant String... p) {}
+
+    private Holder() {}
+  }
+
   @Test
-  public void testMatches_varargsFail() {
+  public void testMatches_varargsInDifferentCompilationUnit() {
     compilationHelper
         .addSourceLines(
             "test/CompileTimeConstantTestCase.java",
             "package test;",
             "import com.google.errorprone.annotations.CompileTimeConstant;",
+            "import " + Holder.class.getCanonicalName() + ";",
             "public class CompileTimeConstantTestCase {",
-            "  public static void m(String s, @CompileTimeConstant String... p) { }",
-            "  // BUG: Diagnostic contains: Non-compile-time constant expression passed",
-            "  public static void r(String s) { m(s, \"foo\", s); }",
+            "  public static void r(String s) {",
+            "    // BUG: Diagnostic contains: Non-compile-time constant expression passed",
+            "    Holder.m(s, \"foo\", s);",
+            "  }",
             "}")
         .doTest();
   }
@@ -580,6 +584,53 @@ public class CompileTimeConstantCheckerTest {
             "  }",
             "  void ctcMethod(@CompileTimeConstant String s) {}",
             "}")
+        .doTest();
+  }
+
+  @Test
+  public void nonConstantField_negative() {
+    compilationHelper
+        .addSourceLines(
+            "test/CompileTimeConstantTestCase.java",
+            "package test;",
+            "import com.google.errorprone.annotations.CompileTimeConstant;",
+            "public abstract class CompileTimeConstantTestCase {",
+            "  abstract String something();",
+            "  @CompileTimeConstant final String x = something();",
+            "}")
+        .setArgs(
+            ImmutableList.of("-XepOpt:CompileTimeConstantChecker:CheckFieldInitializers=false"))
+        .doTest();
+  }
+
+  @Test
+  public void nonConstantField_positive() {
+    compilationHelper
+        .addSourceLines(
+            "test/CompileTimeConstantTestCase.java",
+            "package test;",
+            "import com.google.errorprone.annotations.CompileTimeConstant;",
+            "public abstract class CompileTimeConstantTestCase {",
+            "  abstract String something();",
+            "  // BUG: Diagnostic contains: Non-compile-time constant expression",
+            "  @CompileTimeConstant final String x = something();",
+            "}")
+        .setArgs(ImmutableList.of("-XepOpt:CompileTimeConstantChecker:CheckFieldInitializers=true"))
+        .doTest();
+  }
+
+  @Test
+  public void constantField_immutableList() {
+    compilationHelper
+        .addSourceLines(
+            "test/CompileTimeConstantTestCase.java",
+            "package test;",
+            "import com.google.common.collect.ImmutableList;",
+            "import com.google.errorprone.annotations.CompileTimeConstant;",
+            "public abstract class CompileTimeConstantTestCase {",
+            "  @CompileTimeConstant final ImmutableList<String> x = ImmutableList.of(\"a\");",
+            "}")
+        .setArgs(ImmutableList.of("-XepOpt:CompileTimeConstantChecker:CheckFieldInitializers=true"))
         .doTest();
   }
 }

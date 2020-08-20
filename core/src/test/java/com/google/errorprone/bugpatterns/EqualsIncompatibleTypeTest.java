@@ -16,9 +16,11 @@
 
 package com.google.errorprone.bugpatterns;
 
+import static org.junit.Assume.assumeFalse;
+
 import com.google.errorprone.CompilationTestHelper;
+import com.google.errorprone.util.RuntimeVersion;
 import java.util.Arrays;
-import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -26,12 +28,8 @@ import org.junit.runners.JUnit4;
 /** @author avenet@google.com (Arnaud J. Venet) */
 @RunWith(JUnit4.class)
 public class EqualsIncompatibleTypeTest {
-  private CompilationTestHelper compilationHelper;
-
-  @Before
-  public void setUp() {
-    compilationHelper = CompilationTestHelper.newInstance(EqualsIncompatibleType.class, getClass());
-  }
+  private final CompilationTestHelper compilationHelper =
+      CompilationTestHelper.newInstance(EqualsIncompatibleType.class, getClass());
 
   @Test
   public void testPositiveCase() {
@@ -50,6 +48,7 @@ public class EqualsIncompatibleTypeTest {
 
   @Test
   public void testPrimitiveBoxingIntoObject() {
+    assumeFalse(RuntimeVersion.isAtLeast12()); // https://bugs.openjdk.java.net/browse/JDK-8028563
     compilationHelper
         .addSourceLines(
             "Test.java",

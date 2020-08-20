@@ -22,9 +22,9 @@ import static com.google.common.base.Strings.nullToEmpty;
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static com.google.common.collect.Iterables.getLast;
 import static com.google.common.collect.Iterables.getOnlyElement;
-import static com.google.errorprone.BugPattern.ProvidesFix.REQUIRES_HUMAN_ATTENTION;
 import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
 import static com.google.errorprone.matchers.Matchers.SERIALIZATION_METHODS;
+import static com.google.errorprone.util.ASTHelpers.getStartPosition;
 import static com.google.errorprone.util.ASTHelpers.getSymbol;
 import static com.google.errorprone.util.ASTHelpers.getType;
 import static com.google.errorprone.util.ASTHelpers.isSubtype;
@@ -90,7 +90,6 @@ import com.sun.tools.javac.code.Symbol.TypeSymbol;
 import com.sun.tools.javac.code.Symbol.VarSymbol;
 import com.sun.tools.javac.code.Type;
 import com.sun.tools.javac.tree.JCTree;
-import com.sun.tools.javac.tree.JCTree.JCAnnotation;
 import com.sun.tools.javac.tree.JCTree.JCAssign;
 import com.sun.tools.javac.tree.JCTree.JCAssignOp;
 import com.sun.tools.javac.util.Position;
@@ -114,14 +113,12 @@ import javax.lang.model.type.NullType;
     name = "UnusedVariable",
     altNames = {"unused", "UnusedParameters"},
     summary = "Unused.",
-    providesFix = REQUIRES_HUMAN_ATTENTION,
     severity = WARNING,
     documentSuppression = false)
 public final class UnusedVariable extends BugChecker implements CompilationUnitTreeMatcher {
   private static final String EXEMPT_PREFIX = "unused";
 
   private static final ImmutableSet<String> EXEMPT_NAMES = ImmutableSet.of("ignored");
-
 
   /**
    * The set of annotation full names which exempt annotated element from being reported as unused.
@@ -134,7 +131,7 @@ public final class UnusedVariable extends BugChecker implements CompilationUnitT
           "javax.persistence.Version",
           "javax.xml.bind.annotation.XmlElement",
           "org.junit.Rule",
-          "org.mockito.Mock",
+          "org.openqa.selenium.support.FindAll",
           "org.openqa.selenium.support.FindBy",
           "org.openqa.selenium.support.FindBys");
 
@@ -476,7 +473,7 @@ public final class UnusedVariable extends BugChecker implements CompilationUnitT
         }
         if (trees.size() == 1) {
           Tree tree = getOnlyElement(trees);
-          if (((JCTree) tree).getStartPosition() == -1 || state.getEndPosition(tree) == -1) {
+          if (getStartPosition(tree) == -1 || state.getEndPosition(tree) == -1) {
             // TODO(b/118437729): handle bogus source positions in enum declarations
             return;
           }
@@ -489,8 +486,8 @@ public final class UnusedVariable extends BugChecker implements CompilationUnitT
           startPos = state.getEndPosition(trees.get(index - 1));
           endPos = state.getEndPosition(trees.get(index));
         } else {
-          startPos = ((JCTree) trees.get(index)).getStartPosition();
-          endPos = ((JCTree) trees.get(index + 1)).getStartPosition();
+          startPos = getStartPosition(trees.get(index));
+          endPos = getStartPosition(trees.get(index + 1));
         }
         if (index == methodSymbol.params().size() - 1 && methodSymbol.isVarArgs()) {
           endPos = state.getEndPosition(getLast(trees));
@@ -519,11 +516,13 @@ public final class UnusedVariable extends BugChecker implements CompilationUnitT
   private static boolean exemptedByAnnotation(
       List<? extends AnnotationTree> annotations, VisitorState state) {
     for (AnnotationTree annotation : annotations) {
-      if (((JCAnnotation) annotation).type != null) {
-        TypeSymbol tsym = ((JCAnnotation) annotation).type.tsym;
-        if (EXEMPTING_VARIABLE_ANNOTATIONS.contains(tsym.getQualifiedName().toString())) {
-          return true;
-        }
+      Type annotationType = ASTHelpers.getType(annotation);
+      if (annotationType == null) {
+        continue;
+      }
+      TypeSymbol tsym = annotationType.tsym;
+      if (EXEMPTING_VARIABLE_ANNOTATIONS.contains(tsym.getQualifiedName().toString())) {
+        return true;
       }
     }
     return false;
@@ -622,7 +621,6 @@ public final class UnusedVariable extends BugChecker implements CompilationUnitT
           return false;
         }
       }
-
 
       return enclosingMethod.getModifiers().contains(Modifier.PRIVATE);
     }

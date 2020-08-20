@@ -23,7 +23,6 @@ import com.google.common.base.Ascii;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.errorprone.BugPattern;
-import com.google.errorprone.BugPattern.ProvidesFix;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.bugpatterns.BugChecker.ClassTreeMatcher;
 import com.google.errorprone.fixes.SuggestedFix;
@@ -39,7 +38,7 @@ import com.sun.source.util.TreePath;
 import com.sun.source.util.TreePathScanner;
 import com.sun.source.util.TreeScanner;
 import com.sun.tools.javac.code.Symbol;
-import java.util.Map.Entry;
+import java.util.Map;
 import javax.lang.model.element.ElementKind;
 
 /** Checker for variables under the same scope that only differ in capitalization. */
@@ -49,8 +48,7 @@ import javax.lang.model.element.ElementKind;
         "It is confusing to have a field and a parameter under the same scope that differ only in "
             + "capitalization.",
     severity = WARNING,
-    generateExamplesFromTestCases = false,
-    providesFix = ProvidesFix.REQUIRES_HUMAN_ATTENTION)
+    generateExamplesFromTestCases = false)
 public class InconsistentCapitalization extends BugChecker implements ClassTreeMatcher {
 
   @Override
@@ -73,7 +71,7 @@ public class InconsistentCapitalization extends BugChecker implements ClassTreeM
       return Description.NO_MATCH;
     }
 
-    for (Entry<TreePath, Symbol> entry : matchedParameters.entrySet()) {
+    for (Map.Entry<TreePath, Symbol> entry : matchedParameters.entrySet()) {
       TreePath parameterPath = entry.getKey();
       Symbol field = entry.getValue();
       String fieldName = field.getSimpleName().toString();

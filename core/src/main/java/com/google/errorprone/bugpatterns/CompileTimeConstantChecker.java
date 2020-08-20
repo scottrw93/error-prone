@@ -23,6 +23,7 @@ import static com.google.errorprone.matchers.CompileTimeConstantExpressionMatche
 
 import com.google.common.collect.ImmutableSet;
 import com.google.errorprone.BugPattern;
+import com.google.errorprone.ErrorProneFlags;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.bugpatterns.BugChecker.AssignmentTreeMatcher;
 import com.google.errorprone.bugpatterns.BugChecker.LambdaExpressionTreeMatcher;
@@ -113,6 +114,13 @@ public class CompileTimeConstantChecker extends BugChecker
   private final Matcher<ExpressionTree> compileTimeConstExpressionMatcher =
       new CompileTimeConstantExpressionMatcher();
 
+  private final boolean checkFieldInitializers;
+
+  public CompileTimeConstantChecker(ErrorProneFlags flags) {
+    this.checkFieldInitializers =
+        flags.getBoolean("CompileTimeConstantChecker:CheckFieldInitializers").orElse(true);
+  }
+
   /**
    * Matches formal parameters with {@link com.google.errorprone.annotations.CompileTimeConstant}
    * annotations against corresponding actual parameters.
@@ -152,7 +160,10 @@ public class CompileTimeConstantChecker extends BugChecker
 
     // If the last formal parameter is a vararg and has the @CompileTimeConstant annotation,
     // we need to check the remaining args as well.
-    if (lastFormalParam == null || (lastFormalParam.flags() & Flags.VARARGS) == 0) {
+    if (lastFormalParam == null) {
+      return Description.NO_MATCH;
+    }
+    if (!calleeSymbol.isVarArgs()) {
       return Description.NO_MATCH;
     }
     if (!hasCompileTimeConstantAnnotation(state, lastFormalParam)) {
@@ -251,19 +262,31 @@ public class CompileTimeConstantChecker extends BugChecker
   @Override
   public Description matchVariable(VariableTree node, VisitorState state) {
     Symbol symbol = ASTHelpers.getSymbol(node);
-    if (symbol.owner.getKind() != ElementKind.CLASS) {
-      return Description.NO_MATCH;
-    }
     if (!hasCompileTimeConstantAnnotation(state, symbol)) {
       return Description.NO_MATCH;
     }
-    if ((symbol.flags() & Flags.FINAL) == Flags.FINAL) {
-      return Description.NO_MATCH;
+    switch (symbol.getKind()) {
+      case PARAMETER:
+        return Description.NO_MATCH;
+      case FIELD:
+        break; // continue below
+      case LOCAL_VARIABLE: // disallowed by @Target meta-annotation
+      default: // impossible
+        throw new AssertionError(symbol.getKind());
     }
-    return buildDescription(node)
-        .setMessage(
-            this.message() + String.format(DID_YOU_MEAN_FINAL_FMT_MESSAGE, symbol.getSimpleName()))
-        .build();
+    if ((symbol.flags() & Flags.FINAL) == 0) {
+      return buildDescription(node)
+          .setMessage(
+              this.message()
+                  + String.format(DID_YOU_MEAN_FINAL_FMT_MESSAGE, symbol.getSimpleName()))
+          .build();
+    }
+    if (checkFieldInitializers
+        && node.getInitializer() != null
+        && !compileTimeConstExpressionMatcher.matches(node.getInitializer(), state)) {
+      return describeMatch(node.getInitializer());
+    }
+    return Description.NO_MATCH;
   }
 
   @Override

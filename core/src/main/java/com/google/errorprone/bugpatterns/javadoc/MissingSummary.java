@@ -18,7 +18,6 @@ package com.google.errorprone.bugpatterns.javadoc;
 
 import static com.google.errorprone.BugPattern.LinkType.CUSTOM;
 import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
-import static com.google.errorprone.BugPattern.StandardTags.STYLE;
 import static com.google.errorprone.bugpatterns.javadoc.Utils.diagnosticPosition;
 import static com.google.errorprone.bugpatterns.javadoc.Utils.getDocTreePath;
 import static com.google.errorprone.matchers.Description.NO_MATCH;
@@ -28,7 +27,6 @@ import static com.google.errorprone.util.ASTHelpers.hasAnnotation;
 import static java.util.stream.Collectors.joining;
 
 import com.google.errorprone.BugPattern;
-import com.google.errorprone.BugPattern.ProvidesFix;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.bugpatterns.BugChecker;
 import com.google.errorprone.bugpatterns.BugChecker.ClassTreeMatcher;
@@ -62,10 +60,8 @@ import javax.lang.model.element.Modifier;
     name = "MissingSummary",
     summary = "A summary line is required on public/protected Javadocs.",
     severity = WARNING,
-    tags = STYLE,
     linkType = CUSTOM,
-    link = "http://google.github.io/styleguide/javaguide.html#s7.2-summary-fragment",
-    providesFix = ProvidesFix.REQUIRES_HUMAN_ATTENTION,
+    link = "https://google.github.io/styleguide/javaguide.html#s7.2-summary-fragment",
     documentSuppression = false)
 public final class MissingSummary extends BugChecker
     implements ClassTreeMatcher, MethodTreeMatcher, VariableTreeMatcher {
@@ -110,7 +106,10 @@ public final class MissingSummary extends BugChecker
     }
     ReturnTree returnTree = findFirst(docTreePath, ReturnTree.class);
     if (returnTree != null) {
-      return generateReturnFix(docTreePath, returnTree, state);
+      Description description = generateReturnFix(docTreePath, returnTree, state);
+      if (!description.equals(NO_MATCH)) {
+        return description;
+      }
     }
     SeeTree seeTree = findFirst(docTreePath, SeeTree.class);
     if (seeTree != null) {
@@ -131,6 +130,9 @@ public final class MissingSummary extends BugChecker
       DocTreePath docTreePath, ReturnTree returnTree, VisitorState state) {
     int pos = ((DCDocComment) docTreePath.getDocComment()).comment.getSourcePos(0);
     String description = returnTree.toString().replaceAll("^@return ", "");
+    if (description.isEmpty()) {
+      return NO_MATCH;
+    }
     SuggestedFix fix =
         SuggestedFix.builder()
             .merge(Utils.replace(returnTree, "", state))

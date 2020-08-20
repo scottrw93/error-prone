@@ -15,12 +15,12 @@
  */
 package com.google.errorprone.bugpatterns.time;
 
-import static com.google.errorprone.BugPattern.ProvidesFix.REQUIRES_HUMAN_ATTENTION;
 import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
 import static com.google.errorprone.matchers.Matchers.anyOf;
 import static com.google.errorprone.matchers.Matchers.constructor;
 import static com.google.errorprone.matchers.method.MethodMatchers.instanceMethod;
 import static com.google.errorprone.matchers.method.MethodMatchers.staticMethod;
+import static com.google.errorprone.util.ASTHelpers.getStartPosition;
 import static com.google.errorprone.util.ASTHelpers.getSymbol;
 import static com.google.errorprone.util.ASTHelpers.isSameType;
 import static com.google.errorprone.util.ASTHelpers.isSubtype;
@@ -37,6 +37,7 @@ import com.google.common.base.Predicate;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Iterables;
 import com.google.errorprone.BugPattern;
+import com.google.errorprone.ErrorProneFlags;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.bugpatterns.BugChecker;
 import com.google.errorprone.bugpatterns.BugChecker.MethodInvocationTreeMatcher;
@@ -56,11 +57,10 @@ import com.sun.tools.javac.code.Symbol.TypeSymbol;
 import com.sun.tools.javac.code.Symbol.VarSymbol;
 import com.sun.tools.javac.code.Type;
 import com.sun.tools.javac.code.Types;
-import com.sun.tools.javac.tree.JCTree;
 import com.sun.tools.javac.util.Filter;
 import com.sun.tools.javac.util.Name;
 import java.util.List;
-import java.util.Map.Entry;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import javax.annotation.Nullable;
@@ -73,8 +73,7 @@ import javax.annotation.Nullable;
         "Prefer using java.time-based APIs when available. Note that this checker does"
             + " not and cannot guarantee that the overloads have equivalent semantics, but that is"
             + " generally the case with overloaded methods.",
-    severity = WARNING,
-    providesFix = REQUIRES_HUMAN_ATTENTION)
+    severity = WARNING)
 public final class PreferJavaTimeOverload extends BugChecker
     implements MethodInvocationTreeMatcher {
 
@@ -109,26 +108,45 @@ public final class PreferJavaTimeOverload extends BugChecker
   private static final Matcher<ExpressionTree> JODA_INSTANT_CONSTRUCTOR_MATCHER =
       constructor().forClass(JODA_INSTANT).withParameters("long");
 
+  private static final String TIME_SOURCE = "com.google.common.time.TimeSource";
+  private static final String JODA_CLOCK = "com.google.common.time.Clock";
+
+  private static final String JAVA_TIME_CONVERSIONS =
+      "com.google.thirdparty.jodatime.JavaTimeConversions";
+
+  private static final Matcher<ExpressionTree> TO_JODA_DURATION =
+      staticMethod().onClass(JAVA_TIME_CONVERSIONS).named("toJodaDuration");
+  private static final Matcher<ExpressionTree> TO_JODA_INSTANT =
+      staticMethod().onClass(JAVA_TIME_CONVERSIONS).named("toJodaInstant");
+
   private static final Matcher<ExpressionTree> IGNORED_APIS =
       anyOf(
+          staticMethod().onClass("org.jooq.impl.DSL").withAnyName(),
           // any static method under org.assertj.*
           staticMethod()
               .onClass((type, state) -> type.toString().startsWith("org.assertj."))
               .withAnyName());
 
   private static final Matcher<ExpressionTree> JAVA_DURATION_DECOMPOSITION_MATCHER =
-      anyOf(
-          instanceMethod().onExactClass(JAVA_DURATION).named("toNanos"),
-          instanceMethod().onExactClass(JAVA_DURATION).named("toMillis"),
-          instanceMethod().onExactClass(JAVA_DURATION).named("getSeconds"),
-          instanceMethod().onExactClass(JAVA_DURATION).named("toMinutes"),
-          instanceMethod().onExactClass(JAVA_DURATION).named("toHours"),
-          instanceMethod().onExactClass(JAVA_DURATION).named("toDays"));
+      instanceMethod()
+          .onExactClass(JAVA_DURATION)
+          .namedAnyOf("toNanos", "toMillis", "getSeconds", "toMinutes", "toHours", "toDays");
+
+  private final boolean hasJava8LibSupport;
+
+  public PreferJavaTimeOverload(ErrorProneFlags flags) {
+    this.hasJava8LibSupport = flags.getBoolean("Android:Java8Libs").orElse(false);
+  }
 
   // TODO(kak): Add support for constructors that accept a <long, TimeUnit> or JodaTime Duration
 
   @Override
   public Description matchMethodInvocation(MethodInvocationTree tree, VisitorState state) {
+    // don't fire for Android code that doesn't have Java8 library support (b/138965731)
+    if (state.isAndroidCompatible() && !hasJava8LibSupport) {
+      return Description.NO_MATCH;
+    }
+
     // we return no match for a set of explicitly ignored APIs
     if (IGNORED_APIS.matches(tree, state)) {
       return Description.NO_MATCH;
@@ -189,7 +207,7 @@ public final class PreferJavaTimeOverload extends BugChecker
             }
 
             fix.replace(
-                ((JCTree) arguments.get(0)).getStartPosition(),
+                getStartPosition(arguments.get(0)),
                 state.getEndPosition(arguments.get(1)),
                 replacement);
             return describeMatch(tree, fix.build());
@@ -208,7 +226,7 @@ public final class PreferJavaTimeOverload extends BugChecker
         // TODO(kak): Add support for org.joda.time.Duration.ZERO -> java.time.Duration.ZERO
 
         // If the Joda Duration is being constructed inline, then unwrap it.
-        for (Entry<Matcher<ExpressionTree>, TimeUnit> entry :
+        for (Map.Entry<Matcher<ExpressionTree>, TimeUnit> entry :
             JODA_DURATION_FACTORY_MATCHERS.entrySet()) {
           if (entry.getKey().matches(arg0, state)) {
             String value = null;
@@ -233,13 +251,18 @@ public final class PreferJavaTimeOverload extends BugChecker
           }
         }
 
-        // We could suggest using JavaTimeConversions.toJavaDuration(jodaDuration), but that
-        // requires an additional dependency and isn't open-sourced.
+        // If we're converting to a JodaTime Duration (from a java.time Duration) to call the
+        // JodaTime overload, just unwrap it!
+        if (TO_JODA_DURATION.matches(arg0, state)) {
+          fix.replace(
+              arg0, state.getSourceForNode(((MethodInvocationTree) arg0).getArguments().get(0)));
+          return describeMatch(tree, fix.build());
+        }
+
         fix.replace(
-            arguments.get(0),
+            arg0,
             String.format(
-                "%s.ofMillis(%s.getMillis())",
-                qualifiedDuration, state.getSourceForNode(arguments.get(0))));
+                "%s.ofMillis(%s.getMillis())", qualifiedDuration, state.getSourceForNode(arg0)));
         return describeMatch(tree, fix.build());
       }
     }
@@ -263,13 +286,18 @@ public final class PreferJavaTimeOverload extends BugChecker
           }
         }
 
-        // We could suggest using JavaTimeConversions.toJavaInstant(jodaInstant), but that
-        // requires an additional dependency and isn't open-sourced.
+        // If we're converting to a JodaTime Instant (from a java.time Instant) to call the JodaTime
+        // overload, just unwrap it!
+        if (TO_JODA_INSTANT.matches(arg0, state)) {
+          fix.replace(
+              arg0, state.getSourceForNode(((MethodInvocationTree) arg0).getArguments().get(0)));
+          return describeMatch(tree, fix.build());
+        }
+
         fix.replace(
-            arguments.get(0),
+            arg0,
             String.format(
-                "%s.ofEpochMilli(%s.getMillis())",
-                qualifiedInstant, state.getSourceForNode(arguments.get(0))));
+                "%s.ofEpochMilli(%s.getMillis())", qualifiedInstant, state.getSourceForNode(arg0)));
         return describeMatch(tree, fix.build());
       }
     }
@@ -329,13 +357,18 @@ public final class PreferJavaTimeOverload extends BugChecker
     if (calledMethod == null) {
       return false;
     }
+    return hasJavaTimeOverload(state, typeName, calledMethod, calledMethod.name);
+  }
+
+  private static boolean hasJavaTimeOverload(
+      VisitorState state, String typeName, MethodSymbol calledMethod, Name methodName) {
 
     MethodTree t = state.findEnclosing(MethodTree.class);
     @Nullable MethodSymbol enclosingMethod = t == null ? null : getSymbol(t);
 
     Type type = state.getTypeFromString(typeName);
     return hasMatchingMethods(
-        calledMethod.name,
+        methodName,
         input ->
             !input.equals(calledMethod)
                 // Make sure we're not currently *inside* that overload, to avoid
@@ -350,6 +383,16 @@ public final class PreferJavaTimeOverload extends BugChecker
                 && isSameType(input.getReturnType(), calledMethod.getReturnType(), state),
         ASTHelpers.enclosingClass(calledMethod).asType(),
         state.getTypes());
+  }
+
+  private static boolean hasTimeSourceMethod(MethodInvocationTree tree, VisitorState state) {
+    MethodSymbol calledMethod = getSymbol(tree);
+    if (calledMethod == null) {
+      return false;
+    }
+    String timeSourceBasedName = calledMethod.name.toString().replace("Clock", "TimeSource");
+    return hasJavaTimeOverload(
+        state, TIME_SOURCE, calledMethod, state.getName(timeSourceBasedName));
   }
 
   // Adapted from ASTHelpers.findMatchingMethods(); but this short-circuits

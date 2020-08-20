@@ -18,7 +18,6 @@ package com.google.errorprone.bugpatterns;
 
 import static com.google.common.collect.ImmutableMap.toImmutableMap;
 import static com.google.common.collect.Iterables.getOnlyElement;
-import static com.google.errorprone.BugPattern.ProvidesFix.REQUIRES_HUMAN_ATTENTION;
 import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
 import static com.google.errorprone.matchers.Description.NO_MATCH;
 import static com.google.errorprone.matchers.method.MethodMatchers.staticMethod;
@@ -57,8 +56,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @BugPattern(
     name = "CanonicalDuration",
     summary = "Duration can be expressed more clearly with different units",
-    severity = WARNING,
-    providesFix = REQUIRES_HUMAN_ATTENTION)
+    severity = WARNING)
 public class CanonicalDuration extends BugChecker implements MethodInvocationTreeMatcher {
 
   enum Api {
@@ -278,15 +276,15 @@ public class CanonicalDuration extends BugChecker implements MethodInvocationTre
     List<MethodInvocationTree> sameMethodInvocations = new ArrayList<>();
     new TreeScanner<Void, Void>() {
       @Override
-      public Void scan(Tree node, Void aVoid) {
+      public Void scan(Tree node, Void unused) {
         if (notFirst.get()) {
           return null;
         }
-        return super.scan(node, aVoid);
+        return super.scan(node, unused);
       }
 
       @Override
-      public Void visitMethodInvocation(MethodInvocationTree node, Void aVoid) {
+      public Void visitMethodInvocation(MethodInvocationTree node, Void unused) {
         if (Objects.equals(methodSymbol, ASTHelpers.getSymbol(node))) {
           if (sameMethodInvocations.isEmpty()) {
             if (!Objects.equals(node, tree)) {
@@ -296,9 +294,9 @@ public class CanonicalDuration extends BugChecker implements MethodInvocationTre
           }
 
           sameMethodInvocations.add(node);
-          return super.visitMethodInvocation(node, aVoid);
+          return super.visitMethodInvocation(node, unused);
         }
-        return super.visitMethodInvocation(node, aVoid);
+        return super.visitMethodInvocation(node, unused);
       }
     }.scan(expressionPath.getLeaf(), null);
 

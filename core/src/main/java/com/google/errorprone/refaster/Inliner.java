@@ -21,9 +21,9 @@ import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import com.google.errorprone.SubContext;
-import com.google.errorprone.refaster.Bindings.Key;
 import com.google.errorprone.refaster.UTypeVar.TypeWithExpression;
 import com.google.errorprone.util.ASTHelpers;
+import com.google.errorprone.util.RuntimeVersion;
 import com.sun.tools.javac.code.Symbol;
 import com.sun.tools.javac.code.Symbol.ClassSymbol;
 import com.sun.tools.javac.code.Symbol.TypeSymbol;
@@ -84,8 +84,7 @@ public final class Inliner {
       throws CouldNotResolveImportException {
     try {
       Symbol symbol =
-          JavaCompiler.instance(context)
-              .resolveIdent(symtab().java_base, qualifiedClass.toString());
+          JavaCompiler.instance(context).resolveBinaryNameOrIdent(qualifiedClass.toString());
       if (symbol.equals(symtab().errSymbol) || !(symbol instanceof ClassSymbol)) {
         throw new CouldNotResolveImportException(qualifiedClass);
       } else {
@@ -173,7 +172,7 @@ public final class Inliner {
     return INLINE_AS_TREE.visit(type, this);
   }
 
-  public <V> V getBinding(Key<V> key) {
+  public <V> V getBinding(Bindings.Key<V> key) {
     V value = bindings.getBinding(key);
     if (value == null) {
       throw new IllegalStateException("No binding for " + key);
@@ -181,7 +180,7 @@ public final class Inliner {
     return value;
   }
 
-  public <V> Optional<V> getOptionalBinding(Key<V> key) {
+  public <V> Optional<V> getOptionalBinding(Bindings.Key<V> key) {
     return Optional.fromNullable(bindings.getBinding(key));
   }
 
@@ -229,9 +228,22 @@ public final class Inliner {
     sym.type = typeVar;
     typeVarCache.put(var.getName(), typeVar);
     // Any recursive uses of var will point to the same TypeVar object generated above.
-    typeVar.bound = var.getUpperBound().inline(this);
+    setUpperBound(typeVar, var.getUpperBound().inline(this));
     typeVar.lower = var.getLowerBound().inline(this);
     return typeVar;
+  }
+
+  private static void setUpperBound(TypeVar typeVar, Type bound) {
+    try {
+      // https://bugs.openjdk.java.net/browse/JDK-8193367
+      if (RuntimeVersion.isAtLeast13()) {
+        TypeVar.class.getMethod("setUpperBound", Type.class).invoke(typeVar, bound);
+      } else {
+        TypeVar.class.getField("bound").set(typeVar, bound);
+      }
+    } catch (ReflectiveOperationException e) {
+      throw new LinkageError(e.getMessage(), e);
+    }
   }
 
   Type inlineTypeVar(UTypeVar var) throws CouldNotResolveImportException {
