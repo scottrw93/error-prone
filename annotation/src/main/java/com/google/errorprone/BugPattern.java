@@ -166,7 +166,8 @@ public @interface BugPattern {
     ERROR,
     WARNING,
     SUGGESTION,
-    HIDDEN
+    HIDDEN,
+    DYNAMIC
   }
 
   /** True if the check can be disabled using command-line flags. */
