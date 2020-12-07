@@ -22,14 +22,19 @@ import static com.google.errorprone.BugPattern.SeverityLevel.SUGGESTION;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 import com.google.errorprone.BugPattern;
 import com.google.errorprone.BugPattern.SeverityLevel;
 import com.google.errorprone.annotations.CheckReturnValue;
+import com.google.errorprone.annotations.Immutable;
 import com.google.errorprone.fixes.Fix;
 import com.sun.source.tree.Tree;
 import com.sun.tools.javac.tree.JCTree;
 import com.sun.tools.javac.util.JCDiagnostic.DiagnosticPosition;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import javax.annotation.Nullable;
 
@@ -43,7 +48,7 @@ public class Description {
   /** Describes the sentinel value of the case where the match failed. */
   public static final Description NO_MATCH =
       new Description(
-          null, "<no match>", "<no match>", "<no match>", ImmutableList.<Fix>of(), SUGGESTION);
+          null, "<no match>", "<no match>", "<no match>", ImmutableList.<Fix>of(), SUGGESTION, ImmutableMap.of());
 
   /** The position of the match. */
   public final DiagnosticPosition position;
@@ -56,6 +61,9 @@ public class Description {
 
   /** The raw link URL for the check. May be null if there is no link. */
   @Nullable private final String linkUrl;
+
+  /** The metadata associated with this description */
+  private final ImmutableMap<String, Object> metadata;
 
   /**
    * A list of fixes to suggest in an error message or use in automated refactoring. Fixes are in
@@ -80,6 +88,12 @@ public class Description {
     return linkUrl;
   }
 
+  public <T> Optional<T> getMetadata(String key) {
+    @SuppressWarnings("unchecked")
+    T res = (T) metadata.get(key);
+    return Optional.ofNullable(res);
+  }
+
   /** Returns the raw message, not including a link or check name. */
   public String getRawMessage() {
     return rawMessage;
@@ -98,19 +112,21 @@ public class Description {
       String rawMessage,
       @Nullable String linkUrl,
       List<Fix> fixes,
-      SeverityLevel severity) {
+      SeverityLevel severity,
+      ImmutableMap<String, Object> metadata) {
     this.position = position;
     this.checkName = checkName;
     this.rawMessage = rawMessage;
     this.linkUrl = linkUrl;
     this.fixes = ImmutableList.copyOf(fixes);
     this.severity = severity;
+    this.metadata = metadata;
   }
 
   /** Internal-only. Has no effect if applied to a Description within a BugChecker. */
   @CheckReturnValue
   public Description applySeverityOverride(SeverityLevel severity) {
-    return new Description(position, checkName, rawMessage, linkUrl, fixes, severity);
+    return new Description(position, checkName, rawMessage, linkUrl, fixes, severity, metadata);
   }
 
   /**
@@ -152,6 +168,7 @@ public class Description {
     private final SeverityLevel severity;
     private final ImmutableList.Builder<Fix> fixListBuilder = ImmutableList.builder();
     private String rawMessage;
+    private final ImmutableMap.Builder<String, Object> metadata;
 
     private Builder(
         DiagnosticPosition position,
@@ -164,6 +181,7 @@ public class Description {
       this.linkUrl = linkUrl;
       this.severity = Preconditions.checkNotNull(severity);
       this.rawMessage = Preconditions.checkNotNull(rawMessage);
+      this.metadata = ImmutableMap.builder();
     }
 
     /**
@@ -230,8 +248,19 @@ public class Description {
       return this;
     }
 
+    /**
+     * Add custom metadata to this description. This metadata may be used by description
+     * listeners to drive additional actions
+     */
+    public Builder addMetadata(String key, Object value) {
+      checkNotNull(key, "metadata key must not be null");
+      checkNotNull(value, "metadata value must not be null");
+      metadata.put(key, value);
+      return this;
+    }
+
     public Description build() {
-      return new Description(position, name, rawMessage, linkUrl, fixListBuilder.build(), severity);
+      return new Description(position, name, rawMessage, linkUrl, fixListBuilder.build(), severity, metadata.build());
     }
   }
 }
