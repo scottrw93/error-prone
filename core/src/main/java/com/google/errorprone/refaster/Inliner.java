@@ -236,7 +236,9 @@ public final class Inliner {
   private static void setUpperBound(TypeVar typeVar, Type bound) {
     try {
       // https://bugs.openjdk.java.net/browse/JDK-8193367
-      if (RuntimeVersion.isAtLeast13()) {
+      if (RuntimeVersion.isAtLeast11()) {
+        // This method is only in java 11.0.9 or later,
+        // but that should be fine because that's what we use
         TypeVar.class.getMethod("setUpperBound", Type.class).invoke(typeVar, bound);
       } else {
         TypeVar.class.getField("bound").set(typeVar, bound);
