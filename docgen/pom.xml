@@ -21,7 +21,7 @@
   <parent>
     <groupId>com.google.errorprone</groupId>
     <artifactId>error_prone_parent</artifactId>
-    <version>2.4.1-SNAPSHOT</version>
+    <version>HEAD-SNAPSHOT</version>
   </parent>
 
   <name>Documentation tool for generating Error Prone bugpattern documentation</name>
@@ -89,7 +89,7 @@
     <dependency>
       <groupId>org.yaml</groupId>
       <artifactId>snakeyaml</artifactId>
-      <version>1.14</version>
+      <version>1.27</version>
     </dependency>
     <dependency>
       <groupId>junit</groupId>
@@ -146,7 +146,6 @@
                   <arguments>
                     <argument>-bug_patterns=${basedir}/../core/target/generated-sources/annotations/bugPatterns.txt</argument>
                     <argument>-docs_repository=${basedir}/target/generated-wiki/</argument>
-                    <argument>-examplesDir=${basedir}/../core/src/test/java/</argument>
                     <argument>-explanations=${basedir}/../docs/bugpattern/</argument>
                     <argument>-target=external</argument>
                   </arguments>

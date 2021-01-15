@@ -56,8 +56,7 @@ import java.util.List;
 @BugPattern(
     name = "MustBeClosedChecker",
     summary = "The result of this method must be closed.",
-    severity = ERROR,
-    generateExamplesFromTestCases = false)
+    severity = ERROR)
 public class MustBeClosedChecker extends AbstractMustBeClosedChecker
     implements MethodTreeMatcher,
         MethodInvocationTreeMatcher,
@@ -124,6 +123,15 @@ public class MustBeClosedChecker extends AbstractMustBeClosedChecker
       return NO_MATCH;
     }
     return matchNewClassOrMethodInvocation(tree, state);
+  }
+
+  @Override
+  protected Description matchNewClassOrMethodInvocation(ExpressionTree tree, VisitorState state) {
+    Description description = super.matchNewClassOrMethodInvocation(tree, state);
+    if (description.equals(NO_MATCH)) {
+      return NO_MATCH;
+    }
+    return description;
   }
 
   @Override

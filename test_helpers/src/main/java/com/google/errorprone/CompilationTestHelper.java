@@ -19,7 +19,10 @@ package com.google.errorprone;
 import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static com.google.common.truth.Truth.assertWithMessage;
+import static com.google.errorprone.FileObjects.forResource;
+import static com.google.errorprone.FileObjects.forSourceLines;
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static java.util.Arrays.stream;
 import static org.junit.Assert.fail;
 
 import com.google.common.base.Joiner;
@@ -44,8 +47,6 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -53,10 +54,7 @@ import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
 import javax.annotation.Nullable;
 import javax.tools.Diagnostic;
-import javax.tools.JavaCompiler;
-import javax.tools.JavaCompiler.CompilationTask;
 import javax.tools.JavaFileObject;
-import javax.tools.StandardLocation;
 
 /** Helps test Error Prone bug checkers and compilations. */
 @CheckReturnValue
@@ -78,25 +76,19 @@ public class CompilationTestHelper {
   private final DiagnosticTestHelper diagnosticHelper;
   private final BaseErrorProneJavaCompiler compiler;
   private final ByteArrayOutputStream outputStream;
-  private final ErrorProneInMemoryFileManager fileManager;
+  private final Class<?> clazz;
   private final List<JavaFileObject> sources = new ArrayList<>();
   private ImmutableList<String> extraArgs = ImmutableList.of();
   @Nullable private ImmutableList<Class<?>> overrideClasspath;
   private boolean expectNoDiagnostics = false;
   private Optional<Result> expectedResult = Optional.empty();
-  private boolean checkWellFormed = true;
   private LookForCheckNameInDiagnostic lookForCheckNameInDiagnostic =
       LookForCheckNameInDiagnostic.YES;
 
   private boolean run = false;
 
   private CompilationTestHelper(ScannerSupplier scannerSupplier, String checkName, Class<?> clazz) {
-    this.fileManager = new ErrorProneInMemoryFileManager(clazz);
-    try {
-      fileManager.setLocation(StandardLocation.SOURCE_PATH, Collections.emptyList());
-    } catch (IOException e) {
-      throw new UncheckedIOException(e);
-    }
+    this.clazz = clazz;
     this.diagnosticHelper = new DiagnosticTestHelper(checkName);
     this.outputStream = new ByteArrayOutputStream();
     this.compiler = new BaseErrorProneJavaCompiler(JavacTool.create(), scannerSupplier);
@@ -188,7 +180,7 @@ public class CompilationTestHelper {
   // TODO(eaftan): We could eliminate this path parameter and just infer the path from the
   // package and class name
   public CompilationTestHelper addSourceLines(String path, String... lines) {
-    this.sources.add(fileManager.forSourceLines(path, lines));
+    this.sources.add(forSourceLines(path, lines));
     return this;
   }
 
@@ -200,7 +192,7 @@ public class CompilationTestHelper {
    * @param path the path to the source file
    */
   public CompilationTestHelper addSourceFile(String path) {
-    this.sources.add(fileManager.forResource(path));
+    this.sources.add(forResource(clazz, path));
     return this;
   }
 
@@ -221,7 +213,7 @@ public class CompilationTestHelper {
       return this;
     }
     return setArgs(
-        Arrays.stream(modules)
+        stream(modules)
             .map(m -> String.format("--add-exports=%s=ALL-UNNAMED", m))
             .collect(toImmutableList()));
   }
@@ -242,16 +234,6 @@ public class CompilationTestHelper {
    */
   public CompilationTestHelper expectNoDiagnostics() {
     this.expectNoDiagnostics = true;
-    return this;
-  }
-
-  /**
-   * By default, the compilation helper will not run Error Prone on compilations that fail with
-   * javac errors. This behaviour can be disabled to test the interaction between Error Prone checks
-   * and javac diagnostics.
-   */
-  public CompilationTestHelper ignoreJavacErrors() {
-    this.checkWellFormed = false;
     return this;
   }
 
@@ -351,16 +333,12 @@ public class CompilationTestHelper {
 
   private Result compile() {
     List<String> processedArgs = buildArguments(overrideClasspath, extraArgs);
-    if (checkWellFormed) {
-      checkWellFormed(sources, processedArgs);
-    }
-    fileManager.createAndInstallTempFolderForOutput();
     return compiler
             .getTask(
                 new PrintWriter(
                     new BufferedWriter(new OutputStreamWriter(outputStream, UTF_8)),
                     /*autoFlush=*/ true),
-                fileManager,
+                FileManagers.testFileManager(),
                 diagnosticHelper.collector,
                 /* options= */ ImmutableList.copyOf(processedArgs),
                 /* classes= */ ImmutableList.of(),
@@ -368,33 +346,5 @@ public class CompilationTestHelper {
             .call()
         ? Result.OK
         : Result.ERROR;
-  }
-
-  private void checkWellFormed(Iterable<JavaFileObject> sources, List<String> args) {
-    fileManager.createAndInstallTempFolderForOutput();
-    JavaCompiler compiler = JavacTool.create();
-    OutputStream outputStream = new ByteArrayOutputStream();
-    List<String> remainingArgs = null;
-    try {
-      remainingArgs = Arrays.asList(ErrorProneOptions.processArgs(args).getRemainingArgs());
-    } catch (InvalidCommandLineOptionException e) {
-      fail("Exception during argument processing: " + e);
-    }
-    CompilationTask task =
-        compiler.getTask(
-            new PrintWriter(
-                new BufferedWriter(new OutputStreamWriter(outputStream, UTF_8)),
-                /*autoFlush=*/ true),
-            fileManager,
-            null,
-            remainingArgs,
-            null,
-            sources);
-    boolean result = task.call();
-    assertWithMessage(
-            String.format(
-                "Test program failed to compile with non Error Prone error: %s", outputStream))
-        .that(result)
-        .isTrue();
   }
 }

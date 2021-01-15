@@ -18,6 +18,7 @@ package com.google.errorprone.bugpatterns;
 
 import static com.google.errorprone.BugCheckerRefactoringTestHelper.TestMode.TEXT_MATCH;
 
+import com.google.common.collect.ImmutableList;
 import com.google.errorprone.BugCheckerRefactoringTestHelper;
 import com.google.errorprone.CompilationTestHelper;
 import org.junit.Ignore;
@@ -636,6 +637,30 @@ public class ParameterNameTest {
   }
 
   @Test
+  public void varargsTrailing() {
+    BugCheckerRefactoringTestHelper.newInstance(new ParameterName(), getClass())
+        .addInputLines(
+            "in/Test.java",
+            "class Test {",
+            "  void foo(int... args) {}",
+            "",
+            "  void bar() {",
+            "    foo(1, /* foo= */ 2);",
+            "  }",
+            "}")
+        .addOutputLines(
+            "out/Test.java",
+            "class Test {",
+            "  void foo(int... args) {}",
+            "",
+            "  void bar() {",
+            "    foo(1, /* foo */ 2);",
+            "  }",
+            "}")
+        .doTest();
+  }
+
+  @Test
   public void varargsIgnoreNonParameterNameComments() {
     testHelper
         .addSourceLines(
@@ -701,6 +726,44 @@ public class ParameterNameTest {
             "  }",
             "}")
         .withClasspath(Holder.class, ParameterNameTest.class)
+        .doTest();
+  }
+
+  @Test
+  public void exemptPackage() {
+    CompilationTestHelper.newInstance(ParameterName.class, getClass())
+        .addSourceLines(
+            "test/a/A.java",
+            "package test.a;",
+            "public class A {",
+            "  public static void f(int value) {}",
+            "}")
+        .addSourceLines(
+            "test/b/nested/B.java",
+            "package test.b.nested;",
+            "public class B {",
+            "  public static void f(int value) {}",
+            "}")
+        .addSourceLines(
+            "test/c/C.java",
+            "package test.c;",
+            "public class C {",
+            "  public static void f(int value) {}",
+            "}")
+        .addSourceLines(
+            "Test.java",
+            "import test.a.A;",
+            "import test.b.nested.B;",
+            "import test.c.C;",
+            "class Test {",
+            "  void f() {",
+            "    A.f(/* typo= */ 1);",
+            "    B.f(/* typo= */ 1);",
+            "    // BUG: Diagnostic contains: 'C.f(/* value= */ 1);'",
+            "    C.f(/* typo= */ 1);",
+            "  }",
+            "}")
+        .setArgs(ImmutableList.of("-XepOpt:ParameterName:exemptPackagePrefixes=test.a,test.b"))
         .doTest();
   }
 }

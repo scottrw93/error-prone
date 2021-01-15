@@ -25,9 +25,10 @@ import static com.google.errorprone.fixes.SuggestedFixes.renameVariable;
 import static com.google.errorprone.matchers.Description.NO_MATCH;
 import static com.google.errorprone.matchers.JUnitMatchers.TEST_CASE;
 import static com.google.errorprone.util.ASTHelpers.annotationsAmong;
+import static com.google.errorprone.util.ASTHelpers.findSuperMethod;
 import static com.google.errorprone.util.ASTHelpers.findSuperMethods;
-import static com.google.errorprone.util.ASTHelpers.getGeneratedBy;
 import static com.google.errorprone.util.ASTHelpers.getSymbol;
+import static com.google.errorprone.util.ASTHelpers.hasAnnotation;
 
 import com.google.common.base.CaseFormat;
 import com.google.common.collect.ImmutableSet;
@@ -37,7 +38,6 @@ import com.google.errorprone.bugpatterns.BugChecker.MethodTreeMatcher;
 import com.google.errorprone.bugpatterns.BugChecker.VariableTreeMatcher;
 import com.google.errorprone.matchers.Description;
 import com.google.errorprone.suppliers.Supplier;
-import com.google.errorprone.util.ASTHelpers;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.VariableTree;
 import com.sun.tools.javac.code.Symbol;
@@ -46,10 +46,11 @@ import com.sun.tools.javac.util.Name;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import javax.lang.model.element.ElementKind;
+import javax.lang.model.element.Modifier;
 
 /** Flags a few ways in which member names may violate the style guide. */
 @BugPattern(
-    name = "MemberNaming",
+    name = "MemberName",
     severity = WARNING,
     summary = "Methods and non-static variables should be named in lowerCamelCase.",
     linkType = CUSTOM,
@@ -63,6 +64,13 @@ public final class MemberName extends BugChecker implements MethodTreeMatcher, V
                   .map(s::getName)
                   .collect(toImmutableSet()));
 
+  private static final Supplier<ImmutableSet<Name>> EXEMPTED_METHOD_ANNOTATIONS =
+      VisitorState.memoize(
+          s ->
+              Stream.of("com.pholser.junit.quickcheck.Property")
+                  .map(s::getName)
+                  .collect(toImmutableSet()));
+
   @Override
   public Description matchMethod(MethodTree tree, VisitorState state) {
     MethodSymbol symbol = getSymbol(tree);
@@ -72,18 +80,27 @@ public final class MemberName extends BugChecker implements MethodTreeMatcher, V
     if (!annotationsAmong(symbol.owner, EXEMPTED_CLASS_ANNOTATIONS.get(state), state).isEmpty()) {
       return NO_MATCH;
     }
-    if (tree.getModifiers().getAnnotations().stream()
-        .map(ASTHelpers::getSymbol)
-        .anyMatch(s -> s != null && s.getSimpleName().toString().contains("Test"))) {
+    if (!annotationsAmong(symbol, EXEMPTED_METHOD_ANNOTATIONS.get(state), state).isEmpty()) {
+      return NO_MATCH;
+    }
+    if (hasTestAnnotation(symbol)
+        || findSuperMethods(symbol, state.getTypes()).stream()
+            .anyMatch(s -> hasTestAnnotation(s))) {
+      return NO_MATCH;
+    }
+    // It is a surprisingly common error to replace @Test with @Ignore to ignore a test.
+    if (hasAnnotation(symbol, "org.junit.Ignore", state)) {
+      return NO_MATCH;
+    }
+    if (findSuperMethod(getSymbol(tree), state.getTypes()).isPresent()) {
+      return NO_MATCH;
+    }
+    if (tree.getModifiers().getFlags().contains(Modifier.NATIVE)) {
       return NO_MATCH;
     }
     // JUnitParams reflectively accesses methods starting with "parametersFor" to provide parameters
     // for tests (which may then contain underscores).
     if (symbol.getSimpleName().toString().startsWith("parametersFor")) {
-      return NO_MATCH;
-    }
-    if (findSuperMethods(symbol, state.getTypes()).stream()
-        .anyMatch(m -> !getGeneratedBy(m, state).isEmpty())) {
       return NO_MATCH;
     }
     if (TEST_CASE.matches(tree, state)) {
@@ -97,6 +114,11 @@ public final class MemberName extends BugChecker implements MethodTreeMatcher, V
     return suggested.equals(name) || !symbol.isPrivate()
         ? describeMatch(tree)
         : describeMatch(tree, renameMethodWithInvocations(tree, suggested, state));
+  }
+
+  private static boolean hasTestAnnotation(MethodSymbol symbol) {
+    return symbol.getRawAttributes().stream()
+        .anyMatch(c -> c.type.tsym.getSimpleName().toString().contains("Test"));
   }
 
   @Override

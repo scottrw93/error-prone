@@ -70,7 +70,7 @@ public class AndroidJdkLibsChecker extends ApiDiffChecker {
                 Java7ApiChecker.API_DIFF.unsupportedMembersByClass().entries().stream()
                     .filter(e -> !support.allowedPackages.contains(packageName(e.getKey())))
                     .filter(e -> !support.allowedClasses.contains(e.getKey()))
-                    .filter(e -> support.bannedMembers.isEmpty() || !support.memberIsWhitelisted(e))
+                    .filter(e -> support.bannedMembers.isEmpty() || !support.memberIsAllowed(e))
                     .collect(Collectors.toSet()))
             .putAll(support.bannedMembers)
             .build();
@@ -98,7 +98,7 @@ public class AndroidJdkLibsChecker extends ApiDiffChecker {
       bannedMembers = allowJava8 ? DESUGAR_BANNED_MEMBERS : ImmutableSetMultimap.of();
     }
 
-    private boolean memberIsWhitelisted(Map.Entry<String, ClassMemberKey> member) {
+    private boolean memberIsAllowed(Map.Entry<String, ClassMemberKey> member) {
       return allowedMembers.containsEntry(member.getKey(), member.getValue())
           || allowedMembers.get(member.getKey()).stream()
               .anyMatch(
@@ -134,6 +134,7 @@ public class AndroidJdkLibsChecker extends ApiDiffChecker {
             .add("java/util/List")
             .add("java/util/LongSummaryStatistics")
             .add("java/util/Map")
+            .add("java/util/HashMap")
             .add("java/util/Map\\$$Entry")
             .add("java/util/Objects")
             .add("java/util/Optional")
@@ -147,7 +148,13 @@ public class AndroidJdkLibsChecker extends ApiDiffChecker {
             .add("java/util/Spliterator$OfInt")
             .add("java/util/Spliterator$OfLong")
             .add("java/util/Spliterator$OfPrimitive")
+            .add("java/util/Spliterators")
+            .add("java/util/Spliterators$AbstractDoubleSpliterator")
+            .add("java/util/Spliterators$AbstractIntSpliterator")
+            .add("java/util/Spliterators$AbstractLongSpliterator")
+            .add("java/util/Spliterators$AbstractSpliterator")
             .add("java/util/StringJoiner")
+            .add("java/util/concurrent/ConcurrentHashMap")
             .add("java/util/concurrent/ConcurrentMap")
             .add("java/util/concurrent/atomic/AtomicInteger")
             .add("java/util/concurrent/atomic/AtomicLong")

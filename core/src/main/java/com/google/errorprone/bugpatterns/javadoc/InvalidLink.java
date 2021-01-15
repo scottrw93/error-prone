@@ -157,7 +157,7 @@ public final class InvalidLink extends BugChecker
             JavacTrees.instance(state.context)
                 .getElement(new DocTreePath(getCurrentPath(), linkTree.getReference()));
       } catch (NullPointerException e) {
-        // TODO(cushon): remove once JDK 12 is the minimum supported version
+        // TODO(b/176098078): remove once JDK 12 is the minimum supported version
         // https://bugs.openjdk.java.net/browse/JDK-8200432
       } finally {
         log.popDiagnosticHandler(deferredDiagnosticHandler);
@@ -198,7 +198,9 @@ public final class InvalidLink extends BugChecker
                 .setMessage(
                     String.format(
                         "The reference `%s` to a method doesn't resolve to anything. Is it"
-                            + " misspelt?",
+                            + " misspelt, or is the parameter list not correct? See"
+                            + " https://docs.oracle.com/javase/8/docs/technotes/tools/unix/javadoc.html#JSSOR654"
+                            + " for documentation on how to form method links.",
                         reference))
                 .build());
       }

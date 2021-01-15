@@ -17,15 +17,20 @@
 package com.google.errorprone.bugpatterns;
 
 import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
+import static com.google.errorprone.matchers.Description.NO_MATCH;
 import static com.google.errorprone.matchers.Matchers.anyOf;
 import static com.google.errorprone.matchers.Matchers.instanceEqualsInvocation;
 import static com.google.errorprone.matchers.Matchers.instanceMethod;
 import static com.google.errorprone.matchers.Matchers.staticEqualsInvocation;
 import static com.google.errorprone.matchers.Matchers.staticMethod;
 import static com.google.errorprone.matchers.Matchers.toType;
+import static com.google.errorprone.util.ASTHelpers.getReceiver;
+import static com.google.errorprone.util.ASTHelpers.getReceiverType;
+import static com.google.errorprone.util.ASTHelpers.getType;
 
 import com.google.errorprone.BugPattern;
 import com.google.errorprone.VisitorState;
+import com.google.errorprone.bugpatterns.BugChecker.MemberReferenceTreeMatcher;
 import com.google.errorprone.bugpatterns.BugChecker.MethodInvocationTreeMatcher;
 import com.google.errorprone.bugpatterns.TypeCompatibilityUtils.TypeCompatibilityReport;
 import com.google.errorprone.matchers.Description;
@@ -33,6 +38,7 @@ import com.google.errorprone.matchers.Matcher;
 import com.google.errorprone.util.ASTHelpers;
 import com.google.errorprone.util.Signatures;
 import com.sun.source.tree.ExpressionTree;
+import com.sun.source.tree.MemberReferenceTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.Tree;
 import com.sun.tools.javac.code.Type;
@@ -42,9 +48,9 @@ import com.sun.tools.javac.code.Type;
     name = "EqualsIncompatibleType",
     summary = "An equality test between objects with incompatible types always returns false",
     severity = WARNING)
-public class EqualsIncompatibleType extends BugChecker implements MethodInvocationTreeMatcher {
-  private static final Matcher<MethodInvocationTree> STATIC_EQUALS_MATCHER =
-      staticEqualsInvocation();
+public class EqualsIncompatibleType extends BugChecker
+    implements MethodInvocationTreeMatcher, MemberReferenceTreeMatcher {
+  private static final Matcher<ExpressionTree> STATIC_EQUALS_MATCHER = staticEqualsInvocation();
 
   private static final Matcher<ExpressionTree> INSTANCE_EQUALS_MATCHER = instanceEqualsInvocation();
 
@@ -60,7 +66,7 @@ public class EqualsIncompatibleType extends BugChecker implements MethodInvocati
       MethodInvocationTree invocationTree, final VisitorState state) {
     if (!STATIC_EQUALS_MATCHER.matches(invocationTree, state)
         && !INSTANCE_EQUALS_MATCHER.matches(invocationTree, state)) {
-      return Description.NO_MATCH;
+      return NO_MATCH;
     }
 
     // This is the type of the object on which the java.lang.Object.equals() method
@@ -73,23 +79,49 @@ public class EqualsIncompatibleType extends BugChecker implements MethodInvocati
     Type argumentType;
 
     if (STATIC_EQUALS_MATCHER.matches(invocationTree, state)) {
-      receiverType = ASTHelpers.getType(invocationTree.getArguments().get(0));
-      argumentType = ASTHelpers.getType(invocationTree.getArguments().get(1));
+      receiverType = getType(invocationTree.getArguments().get(0));
+      argumentType = getType(invocationTree.getArguments().get(1));
     } else {
-      receiverType = ASTHelpers.getReceiverType(invocationTree);
-      argumentType = ASTHelpers.getType(invocationTree.getArguments().get(0));
+      receiverType = getReceiverType(invocationTree);
+      argumentType = getType(invocationTree.getArguments().get(0));
     }
 
+    return handle(invocationTree, receiverType, argumentType, state);
+  }
+
+  @Override
+  public Description matchMemberReference(MemberReferenceTree tree, VisitorState state) {
+    if (!STATIC_EQUALS_MATCHER.matches(tree, state)
+        && !INSTANCE_EQUALS_MATCHER.matches(tree, state)) {
+      return NO_MATCH;
+    }
+
+    Type type = state.getTypes().findDescriptorType(getType(tree));
+    Type receiverType;
+    Type argumentType;
+
+    if (STATIC_EQUALS_MATCHER.matches(tree, state)) {
+      receiverType = type.getParameterTypes().get(0);
+      argumentType = type.getParameterTypes().get(1);
+    } else {
+      receiverType = getType(getReceiver(tree));
+      argumentType = type.getParameterTypes().get(0);
+    }
+    return handle(tree, receiverType, argumentType, state);
+  }
+
+  private Description handle(
+      ExpressionTree invocationTree, Type receiverType, Type argumentType, VisitorState state) {
     TypeCompatibilityReport compatibilityReport =
         TypeCompatibilityUtils.compatibilityOfTypes(receiverType, argumentType, state);
     if (compatibilityReport.compatible()) {
-      return Description.NO_MATCH;
+      return NO_MATCH;
     }
 
     // Ignore callsites wrapped inside assertFalse:
     // assertFalse(objOfReceiverType.equals(objOfArgumentType))
     if (ASSERT_FALSE_MATCHER.matches(state.getPath().getParentPath().getLeaf(), state)) {
-      return Description.NO_MATCH;
+      return NO_MATCH;
     }
 
     // When we reach this point, we know that the two following facts hold:
@@ -113,7 +145,7 @@ public class EqualsIncompatibleType extends BugChecker implements MethodInvocati
   }
 
   private static String getMessage(
-      MethodInvocationTree invocationTree,
+      ExpressionTree invocationTree,
       Type receiverType,
       Type argumentType,
       Type conflictingReceiverType,
@@ -128,18 +160,18 @@ public class EqualsIncompatibleType extends BugChecker implements MethodInvocati
             + " and "
             + typeStringPair.getArgumentTypeString();
 
-    // If receiver/argument are incompatible due to a conflict in the generic type, message that out
-    if (!state.getTypes().isSameType(receiverType, conflictingReceiverType)) {
-      TypeStringPair conflictingTypes =
-          new TypeStringPair(conflictingReceiverType, conflictingArgumentType);
-      baseMessage +=
-          ". They are incompatible because "
-              + conflictingTypes.getReceiverTypeString()
-              + " and "
-              + conflictingTypes.getArgumentTypeString()
-              + " are incompatible.";
+    if (state.getTypes().isSameType(receiverType, conflictingReceiverType)) {
+      return baseMessage;
     }
-    return baseMessage;
+    // If receiver/argument are incompatible due to a conflict in the generic type, message that out
+    TypeStringPair conflictingTypes =
+        new TypeStringPair(conflictingReceiverType, conflictingArgumentType);
+    return baseMessage
+        + ". They are incompatible because "
+        + conflictingTypes.getReceiverTypeString()
+        + " and "
+        + conflictingTypes.getArgumentTypeString()
+        + " are incompatible.";
   }
 
   private static class TypeStringPair {

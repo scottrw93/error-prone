@@ -16,6 +16,7 @@
 
 package com.google.errorprone.bugpatterns;
 
+import static com.google.common.collect.ImmutableList.toImmutableList;
 import static com.google.common.collect.Iterables.getLast;
 import static com.google.common.collect.Streams.forEachPair;
 import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
@@ -25,8 +26,10 @@ import static com.google.errorprone.util.ASTHelpers.getStartPosition;
 import com.google.auto.value.AutoValue;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Strings;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Range;
 import com.google.errorprone.BugPattern;
+import com.google.errorprone.ErrorProneFlags;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.bugpatterns.BugChecker.MethodInvocationTreeMatcher;
 import com.google.errorprone.bugpatterns.BugChecker.NewClassTreeMatcher;
@@ -61,6 +64,24 @@ import java.util.regex.Matcher;
 public class ParameterName extends BugChecker
     implements MethodInvocationTreeMatcher, NewClassTreeMatcher {
 
+  private final ImmutableList<String> exemptPackages;
+
+  public ParameterName() {
+    this(ErrorProneFlags.empty());
+  }
+
+  public ParameterName(ErrorProneFlags errorProneFlags) {
+    this.exemptPackages =
+        errorProneFlags
+            .getList("ParameterName:exemptPackagePrefixes")
+            .orElse(ImmutableList.of())
+            .stream()
+            // add a trailing '.' so that e.g. com.foo matches as a prefix of com.foo.bar, but not
+            // com.foobar
+            .map(p -> p.endsWith(".") ? p : p + ".")
+            .collect(toImmutableList());
+  }
+
   @Override
   public Description matchMethodInvocation(MethodInvocationTree tree, VisitorState state) {
     checkArguments(tree, tree.getArguments(), state);
@@ -93,6 +114,10 @@ public class ParameterName extends BugChecker
       // fast path if the arguments don't contain anything that looks like a comment
       return;
     }
+    String enclosingClass = ASTHelpers.enclosingClass(sym).toString();
+    if (exemptPackages.stream().anyMatch(enclosingClass::startsWith)) {
+      return;
+    }
     Deque<ErrorProneToken> tokens =
         new ArrayDeque<>(ErrorProneTokens.getTokens(source, start, state.context));
     forEachPair(
@@ -118,7 +143,7 @@ public class ParameterName extends BugChecker
 
   private static boolean advanceTokens(
       Deque<ErrorProneToken> tokens, ExpressionTree actual, VisitorState state) {
-    while (!tokens.isEmpty() && tokens.peekFirst().pos() < getStartPosition(actual)) {
+    while (!tokens.isEmpty() && tokens.getFirst().pos() < getStartPosition(actual)) {
       tokens.removeFirst();
     }
     if (tokens.isEmpty()) {
@@ -126,7 +151,7 @@ public class ParameterName extends BugChecker
     }
     Range<Integer> argRange =
         Range.closedOpen(getStartPosition(actual), state.getEndPosition(actual));
-    if (!argRange.contains(tokens.peekFirst().pos())) {
+    if (!argRange.contains(tokens.getFirst().pos())) {
       return false;
     }
     return true;
@@ -174,17 +199,10 @@ public class ParameterName extends BugChecker
 
     String fixTemplate = isVarargs(formal) ? "/* %s...= */" : "/* %s= */";
     for (FixInfo match : matches) {
-      int replacementStartPos = match.comment().getSourcePos(0);
-      int replacementEndPos =
-          match.comment().getSourcePos(match.comment().getText().length() - 1) + 1;
       SuggestedFix rewriteCommentFix =
-          SuggestedFix.replace(
-              replacementStartPos,
-              replacementEndPos,
-              String.format(fixTemplate, formal.getSimpleName()));
+          rewriteComment(match.comment(), String.format(fixTemplate, formal.getSimpleName()));
       SuggestedFix rewriteToRegularCommentFix =
-          SuggestedFix.replace(
-              replacementStartPos, replacementEndPos, String.format("/* %s */", match.name()));
+          rewriteComment(match.comment(), String.format("/* %s */", match.name()));
 
       Description description;
       if (match.isFormatCorrect() && !match.isNameCorrect()) {
@@ -226,6 +244,12 @@ public class ParameterName extends BugChecker
     }
   }
 
+  private static SuggestedFix rewriteComment(Comment comment, String format) {
+    int replacementStartPos = comment.getSourcePos(0);
+    int replacementEndPos = comment.getSourcePos(comment.getText().length() - 1) + 1;
+    return SuggestedFix.replace(replacementStartPos, replacementEndPos, format);
+  }
+
   // complains on parameter name comments on varargs past the first one
   private void checkComment(ExpressionTree arg, ErrorProneToken token, VisitorState state) {
     for (Comment comment : token.comments()) {
@@ -233,8 +257,11 @@ public class ParameterName extends BugChecker
           NamedParameterComment.PARAMETER_COMMENT_PATTERN.matcher(
               Comments.getTextFromComment(comment));
       if (m.matches()) {
+        SuggestedFix rewriteCommentFix =
+            rewriteComment(comment, String.format("/* %s%s */", m.group(1), m.group(2)));
         state.reportMatch(
             buildDescription(arg)
+                .addFix(rewriteCommentFix)
                 .setMessage("parameter name comment only allowed on first varargs argument")
                 .build());
       }

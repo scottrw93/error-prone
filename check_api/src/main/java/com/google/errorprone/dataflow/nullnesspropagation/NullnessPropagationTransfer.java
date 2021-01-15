@@ -43,7 +43,6 @@ import com.google.common.primitives.UnsignedLong;
 import com.google.errorprone.dataflow.AccessPath;
 import com.google.errorprone.dataflow.AccessPathStore;
 import com.google.errorprone.dataflow.AccessPathValues;
-import com.google.errorprone.dataflow.LocalVariableValues;
 import com.google.errorprone.dataflow.nullnesspropagation.inference.InferredNullability;
 import com.google.errorprone.dataflow.nullnesspropagation.inference.NullnessQualifierInference;
 import com.google.errorprone.util.MoreAnnotations;
@@ -90,9 +89,10 @@ import javax.annotation.Nullable;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.TypeVariable;
 import org.checkerframework.shaded.dataflow.analysis.Analysis;
-import org.checkerframework.shaded.dataflow.cfg.CFGBuilder;
+import org.checkerframework.shaded.dataflow.analysis.ForwardAnalysisImpl;
 import org.checkerframework.shaded.dataflow.cfg.ControlFlowGraph;
 import org.checkerframework.shaded.dataflow.cfg.UnderlyingAST;
+import org.checkerframework.shaded.dataflow.cfg.builder.CFGBuilder;
 import org.checkerframework.shaded.dataflow.cfg.node.ArrayAccessNode;
 import org.checkerframework.shaded.dataflow.cfg.node.ArrayCreationNode;
 import org.checkerframework.shaded.dataflow.cfg.node.AssignmentNode;
@@ -119,8 +119,8 @@ import org.checkerframework.shaded.dataflow.cfg.node.VariableDeclarationNode;
  * exception). For example, if {@code foo.toString()} is successfully evaluated, we know two things:
  *
  * <ol>
- *   <li>The expression itself is non-null (because {@code toString()} is in our whitelist of
- *       methods known to return non-null values)
+ *   <li>The expression itself is non-null (because {@code toString()} is in our list of methods
+ *       known to return non-null values)
  *   <li>{@code foo} is non-null (because it has been dereferenced without producing a {@code
  *       NullPointerException})
  * </ol>
@@ -519,10 +519,10 @@ class NullnessPropagationTransfer extends AbstractNullnessPropagationTransfer
    * variables will essentially assume whatever default is used in {@link #values}.
    */
   @Override
-  Nullness visitLocalVariable(LocalVariableNode node, LocalVariableValues<Nullness> values) {
+  Nullness visitLocalVariable(LocalVariableNode node, AccessPathValues<Nullness> values) {
     return hasPrimitiveType(node) || hasNonNullConstantValue(node)
         ? NONNULL
-        : values.valueOfLocalVariable(node, defaultAssumption);
+        : values.valueOfAccessPath(AccessPath.fromLocalVariable(node), defaultAssumption);
   }
 
   /**
@@ -832,7 +832,7 @@ class NullnessPropagationTransfer extends AbstractNullnessPropagationTransfer
               /*assumeAssertionsDisabled=*/ false,
               javacEnv);
       Analysis<Nullness, AccessPathStore<Nullness>, NullnessPropagationTransfer> analysis =
-          new Analysis<>(this);
+          new ForwardAnalysisImpl<>(this);
       analysis.performAnalysis(cfg);
       return analysis.getValue(initializerPath.getLeaf());
     } finally {

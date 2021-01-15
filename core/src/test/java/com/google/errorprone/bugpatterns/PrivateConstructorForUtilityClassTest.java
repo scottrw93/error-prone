@@ -17,7 +17,6 @@ package com.google.errorprone.bugpatterns;
 
 import com.google.errorprone.BugCheckerRefactoringTestHelper;
 import com.google.errorprone.CompilationTestHelper;
-import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -25,14 +24,9 @@ import org.junit.runners.JUnit4;
 /** {@link PrivateConstructorForUtilityClass} Test */
 @RunWith(JUnit4.class)
 public final class PrivateConstructorForUtilityClassTest {
-  private BugCheckerRefactoringTestHelper testHelper;
-
-  @Before
-  public void setUp() {
-    testHelper =
-        BugCheckerRefactoringTestHelper.newInstance(
-            new PrivateConstructorForUtilityClass(), getClass());
-  }
+  private final BugCheckerRefactoringTestHelper testHelper =
+      BugCheckerRefactoringTestHelper.newInstance(
+          new PrivateConstructorForUtilityClass(), getClass());
 
   @Test
   public void emptyClassesGetLeftAlone() {
@@ -315,6 +309,38 @@ public final class PrivateConstructorForUtilityClassTest {
             "  private static class Blah {",
             "    static void blah() {}",
             "  }",
+            "}")
+        .expectUnchanged()
+        .doTest();
+  }
+
+  @Test
+  public void finalAdded() {
+    testHelper
+        .addInputLines(
+            "in/Test.java", //
+            "",
+            "class Test {",
+            "  static final String SOME_CONSTANT = \"\";",
+            "}")
+        .addOutputLines(
+            "out/Test.java",
+            "",
+            "final class Test {",
+            "  static final String SOME_CONSTANT = \"\";",
+            "  private Test() {}",
+            "}")
+        .doTest();
+  }
+
+  @Test
+  public void abstractClass_noPrivateConstructor() {
+    testHelper
+        .addInputLines(
+            "in/Test.java", //
+            "",
+            "abstract class Test {",
+            "  static final String SOME_CONSTANT = \"\";",
             "}")
         .expectUnchanged()
         .doTest();

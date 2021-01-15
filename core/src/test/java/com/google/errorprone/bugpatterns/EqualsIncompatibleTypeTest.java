@@ -91,4 +91,33 @@ public class EqualsIncompatibleTypeTest {
             "}")
         .doTest();
   }
+
+  @Test
+  public void methodReference_incompatibleTypes_finding() {
+    compilationHelper
+        .addSourceLines(
+            "Test.java",
+            "import java.util.stream.Stream;",
+            "class Test {",
+            "  boolean t(Stream<Integer> xs, String x) {",
+            "    // BUG: Diagnostic contains:",
+            "    return xs.anyMatch(x::equals);",
+            "  }",
+            "}")
+        .doTest();
+  }
+
+  @Test
+  public void methodReference_comparableTypes_noFinding() {
+    compilationHelper
+        .addSourceLines(
+            "Test.java",
+            "import java.util.stream.Stream;",
+            "class Test {",
+            "  boolean t(Stream<Integer> xs, Object x) {",
+            "    return xs.anyMatch(x::equals);",
+            "  }",
+            "}")
+        .doTest();
+  }
 }

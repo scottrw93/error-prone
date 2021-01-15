@@ -16,7 +16,9 @@
 
 package com.google.errorprone.bugpatterns;
 
-import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
+import static com.google.common.collect.Iterables.getOnlyElement;
+import static com.google.errorprone.BugPattern.SeverityLevel.ERROR;
+import static com.google.errorprone.matchers.Matchers.instanceMethod;
 import static com.google.errorprone.util.ASTHelpers.getReceiver;
 import static com.google.errorprone.util.ASTHelpers.isSubtype;
 
@@ -34,6 +36,7 @@ import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.Tree;
+import com.sun.tools.javac.code.Symbol.VarSymbol;
 import com.sun.tools.javac.code.Type;
 import java.util.Optional;
 
@@ -47,7 +50,7 @@ import java.util.Optional;
     summary =
         "Tree#toString shouldn't be used for Trees deriving from the code being compiled, as it"
             + " discards whitespace and comments.",
-    severity = WARNING)
+    severity = ERROR)
 public class TreeToString extends AbstractToString {
 
   private static final Matcher<ClassTree> IS_BUGCHECKER =
@@ -55,6 +58,12 @@ public class TreeToString extends AbstractToString {
 
   private static final TypePredicate IS_TREE =
       TypePredicates.isDescendantOf("com.sun.source.tree.Tree");
+
+  private static final Matcher<ExpressionTree> TREEMAKER_LITERAL_CREATOR =
+      instanceMethod()
+          .onDescendantOf("com.sun.tools.javac.tree.TreeMaker")
+          .named("Literal")
+          .withParameters("java.lang.Object");
 
   private static boolean treeToStringInBugChecker(Type type, VisitorState state) {
     ClassTree enclosingClass = ASTHelpers.findEnclosingNode(state.getPath(), ClassTree.class);
@@ -98,10 +107,22 @@ public class TreeToString extends AbstractToString {
                 isSubtype(
                     s.type, state.getTypeFromString("com.google.errorprone.VisitorState"), state))
         .findFirst()
-        .map(
-            s ->
-                SuggestedFix.replace(
-                    replace,
-                    String.format("%s.getSourceForNode(%s)", s, state.getSourceForNode(target))));
+        .map(s -> SuggestedFix.replace(replace, createStringReplacement(state, s, target)));
+  }
+
+  private static String createStringReplacement(
+      VisitorState state, VarSymbol visitorStateSymbol, Tree target) {
+    String visitorStateVariable = visitorStateSymbol.getSimpleName().toString();
+    if (target instanceof MethodInvocationTree) {
+      MethodInvocationTree targetMethodInvocationTree = (MethodInvocationTree) target;
+      if (TREEMAKER_LITERAL_CREATOR.matches(targetMethodInvocationTree, state)) {
+        return String.format(
+            "%s.getElements().getConstantExpression(%s)",
+            visitorStateVariable,
+            state.getSourceForNode(getOnlyElement(targetMethodInvocationTree.getArguments())));
+      }
+    }
+    return String.format(
+        "%s.getSourceForNode(%s)", visitorStateVariable, state.getSourceForNode(target));
   }
 }

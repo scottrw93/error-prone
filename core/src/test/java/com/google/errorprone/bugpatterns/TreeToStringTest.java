@@ -63,13 +63,19 @@ public class TreeToStringTest {
             "import com.google.errorprone.bugpatterns.BugChecker.ClassTreeMatcher;",
             "import com.google.errorprone.fixes.SuggestedFix;",
             "import com.google.errorprone.matchers.Description;",
+            "import com.google.errorprone.matchers.Matcher;",
             "import com.sun.source.tree.ClassTree;",
             "import com.sun.tools.javac.code.Symbol;",
             "import com.sun.tools.javac.code.Symbol.ClassSymbol;",
+            "import com.sun.tools.javac.tree.TreeMaker;",
             "import com.sun.tools.javac.code.Type;",
             "import com.sun.tools.javac.code.Types;",
             "@BugPattern(name = \"Example\", summary = \"\", severity = SeverityLevel.ERROR)",
             "public class ExampleChecker extends BugChecker implements ClassTreeMatcher {",
+            "  private static Matcher<ClassTree> matches(String name) {",
+            "    // BUG: Diagnostic contains: state.getSourceForNode(c).equals",
+            "    return (Matcher<ClassTree>) (c, state) -> c.toString().equals(name);",
+            "  }",
             "  @Override public Description matchClass(ClassTree tree, VisitorState state) {",
             "    // BUG: Diagnostic contains: state.getSourceForNode(tree).contains",
             "    if (tree.toString().contains(\"match\")) {",
@@ -77,8 +83,16 @@ public class TreeToStringTest {
             "    }",
             "    return Description.NO_MATCH;",
             "  }",
+            "  private String createTree(VisitorState state) {",
+            "     TreeMaker maker = TreeMaker.instance(state.context);",
+            "    // BUG: Diagnostic contains: state.getElements().getConstantExpression(\"val\")",
+            "     return maker.Literal(\"val\").toString();",
+            "  }",
             "}")
-        .addModules("jdk.compiler/com.sun.tools.javac.code")
+        .addModules(
+            "jdk.compiler/com.sun.tools.javac.code",
+            "jdk.compiler/com.sun.tools.javac.tree",
+            "jdk.compiler/com.sun.tools.javac.util")
         .doTest();
   }
 }

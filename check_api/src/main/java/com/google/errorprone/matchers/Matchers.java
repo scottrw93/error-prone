@@ -18,6 +18,7 @@ package com.google.errorprone.matchers;
 
 import static com.google.common.collect.ImmutableSet.toImmutableSet;
 import static com.google.common.collect.Iterables.getLast;
+import static com.google.common.collect.Iterables.getOnlyElement;
 import static com.google.common.collect.Streams.stream;
 import static com.google.errorprone.suppliers.Suppliers.BOOLEAN_TYPE;
 import static com.google.errorprone.suppliers.Suppliers.INT_TYPE;
@@ -62,6 +63,7 @@ import com.sun.source.tree.LiteralTree;
 import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.MethodTree;
+import com.sun.source.tree.ReturnTree;
 import com.sun.source.tree.StatementTree;
 import com.sun.source.tree.SynchronizedTree;
 import com.sun.source.tree.Tree;
@@ -577,6 +579,13 @@ public class Matchers {
     };
   }
 
+  /** Matches an AST node if it is a null literal. */
+  public static Matcher<ExpressionTree> nullLiteral() {
+    return (tree, state) -> {
+      return tree.getKind() == Kind.NULL_LITERAL;
+    };
+  }
+
   /** Matches an AST node if it is a literal other than null. */
   public static Matcher<ExpressionTree> nonNullLiteral() {
     return (tree, state) -> {
@@ -814,7 +823,7 @@ public class Matchers {
     };
   }
 
-  /** Matches a whitelisted method invocation that is known to never return null */
+  /** Matches a method invocation that is known to never return null. */
   public static Matcher<ExpressionTree> methodReturnsNonNull() {
     return anyOf(
         instanceMethod().onDescendantOf("java.lang.Object").named("toString"),
@@ -1342,44 +1351,59 @@ public class Matchers {
     return compilationUnit.packge.fullname.toString();
   }
 
-  private static final Matcher<MethodInvocationTree> STATIC_EQUALS =
+  private static final Matcher<ExpressionTree> STATIC_EQUALS =
       anyOf(
           allOf(
               staticMethod()
                   .onClass("android.support.v4.util.ObjectsCompat")
                   .named("equals")
                   .withParameters("java.lang.Object", "java.lang.Object"),
-              isSameType(BOOLEAN_TYPE)),
+              Matchers::methodReturnsBoolean),
           allOf(
               staticMethod()
                   .onClass("java.util.Objects")
                   .named("equals")
                   .withParameters("java.lang.Object", "java.lang.Object"),
-              isSameType(BOOLEAN_TYPE)),
+              Matchers::methodReturnsBoolean),
           allOf(
               staticMethod()
                   .onClass("com.google.common.base.Objects")
                   .named("equal")
                   .withParameters("java.lang.Object", "java.lang.Object"),
-              isSameType(BOOLEAN_TYPE)));
+              Matchers::methodReturnsBoolean));
 
   /**
    * Matches an invocation of a recognized static object equality method such as {@link
    * java.util.Objects#equals}. These are simple facades to {@link Object#equals} that accept null
    * for either argument.
    */
-  public static Matcher<MethodInvocationTree> staticEqualsInvocation() {
-    return STATIC_EQUALS;
+  @SuppressWarnings("unchecked") // safe covariant cast
+  public static <T extends ExpressionTree> Matcher<T> staticEqualsInvocation() {
+    return (Matcher<T>) STATIC_EQUALS;
   }
 
   private static final Matcher<ExpressionTree> INSTANCE_EQUALS =
       allOf(
           instanceMethod().anyClass().named("equals").withParameters("java.lang.Object"),
-          isSameType(BOOLEAN_TYPE));
+          Matchers::methodReturnsBoolean);
+
+  private static boolean methodReturnsBoolean(ExpressionTree tree, VisitorState state) {
+    return ASTHelpers.isSameType(
+        getSymbol(tree).type.getReturnType(), state.getSymtab().booleanType, state);
+  }
 
   /** Matches calls to the method {@link Object#equals(Object)} or any override of that method. */
-  public static Matcher<ExpressionTree> instanceEqualsInvocation() {
-    return INSTANCE_EQUALS;
+  @SuppressWarnings("unchecked") // safe covariant cast
+  public static <T extends ExpressionTree> Matcher<T> instanceEqualsInvocation() {
+    return (Matcher<T>) INSTANCE_EQUALS;
+  }
+
+  private static final Matcher<ExpressionTree> INSTANCE_HASHCODE =
+      allOf(instanceMethod().anyClass().named("hashCode").withParameters(), isSameType(INT_TYPE));
+
+  /** Matches calls to the method {@link Object#hashCode()} or any override of that method. */
+  public static Matcher<ExpressionTree> instanceHashCodeInvocation() {
+    return INSTANCE_HASHCODE;
   }
 
   private static final Matcher<ExpressionTree> ASSERT_EQUALS =
@@ -1467,4 +1491,52 @@ public class Matchers {
         Symbol symbol = getSymbol(t);
         return symbol instanceof ClassSymbol && symbol.isInterface();
       };
+
+  /**
+   * Matches the {@code Tree} if it returns an expression matching {@code expressionTreeMatcher}.
+   */
+  public static final Matcher<StatementTree> matchExpressionReturn(
+      Matcher<ExpressionTree> expressionTreeMatcher) {
+    return (statement, state) -> {
+      if (!(statement instanceof ReturnTree)) {
+        return false;
+      }
+      ExpressionTree expression = ((ReturnTree) statement).getExpression();
+      if (expression == null) {
+        return false;
+      }
+      return expressionTreeMatcher.matches(expression, state);
+    };
+  }
+
+  /**
+   * Matches a {@link BlockTree} if it single statement block with statement matching {@code
+   * statementMatcher}.
+   */
+  public static final Matcher<BlockTree> matchSingleStatementBlock(
+      Matcher<StatementTree> statementMatcher) {
+    return (blockTree, state) -> {
+      if (blockTree == null) {
+        return false;
+      }
+      List<? extends StatementTree> statements = blockTree.getStatements();
+      if (statements.size() != 1) {
+        return false;
+      }
+      return statementMatcher.matches(getOnlyElement(statements), state);
+    };
+  }
+
+  /**
+   * Returns a matcher for {@link MethodTree} whose implementation contains a single return
+   * statement with expression matching the passed {@code expressionTreeMatcher}.
+   */
+  public static Matcher<MethodTree> singleStatementReturnMatcher(
+      Matcher<ExpressionTree> expressionTreeMatcher) {
+    Matcher<BlockTree> matcher =
+        matchSingleStatementBlock(matchExpressionReturn(expressionTreeMatcher));
+    return (methodTree, state) -> {
+      return matcher.matches(methodTree.getBody(), state);
+    };
+  }
 }

@@ -22,6 +22,7 @@ import static com.google.common.base.Verify.verify;
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static com.google.common.collect.ImmutableSet.toImmutableSet;
 import static com.google.errorprone.matchers.JUnitMatchers.JUNIT4_RUN_WITH_ANNOTATION;
+import static com.google.errorprone.matchers.Matchers.isSubtypeOf;
 import static com.sun.tools.javac.code.Scope.LookupKind.NON_RECURSIVE;
 import static java.util.Objects.requireNonNull;
 
@@ -138,6 +139,7 @@ import com.sun.tools.javac.util.Log.DeferredDiagnosticHandler;
 import com.sun.tools.javac.util.Name;
 import java.io.IOException;
 import java.lang.annotation.Annotation;
+import java.lang.reflect.Method;
 import java.net.JarURLConnection;
 import java.net.URI;
 import java.util.ArrayDeque;
@@ -322,8 +324,12 @@ public class ASTHelpers {
       case PARENTHESIZED:
       case NEW_CLASS:
       case MEMBER_REFERENCE:
-      case LAMBDA_EXPRESSION:
         return false;
+      case LAMBDA_EXPRESSION:
+        // Parenthesizing e.g. `x -> (y -> z)` is unnecessary but helpful
+        Tree parent = state.getPath().getParentPath().getLeaf();
+        return parent.getKind().equals(Kind.LAMBDA_EXPRESSION)
+            && stripParentheses(((LambdaExpressionTree) parent).getBody()).equals(expression);
       default: // continue below
     }
     if (expression instanceof LiteralTree) {
@@ -335,7 +341,12 @@ public class ASTHelpers {
           .anyMatch(t -> t.kind() == TokenKind.PLUS);
     }
     if (expression instanceof UnaryTree) {
-      return false;
+      Tree parent = state.getPath().getParentPath().getLeaf();
+      if (!(parent instanceof MemberSelectTree)) {
+        return false;
+      }
+      // eg. (i++).toString();
+      return stripParentheses(((MemberSelectTree) parent).getExpression()).equals(expression);
     }
     return true;
   }
@@ -361,7 +372,7 @@ public class ASTHelpers {
     if (path != null) {
       do {
         path = path.getParentPath();
-      } while (path != null && !(klass.isInstance(path.getLeaf())));
+      } while (path != null && !klass.isInstance(path.getLeaf()));
     }
     return path;
   }
@@ -1555,8 +1566,15 @@ public class ASTHelpers {
 
     @Override
     public Type visitCase(CaseTree tree, Void unused) {
-      SwitchTree switchTree = (SwitchTree) parent.getParentPath().getLeaf();
-      return getType(switchTree.getExpression());
+      Tree t = parent.getParentPath().getLeaf();
+      // JDK 12+, t can be SwitchExpressionTree
+      if (t instanceof SwitchTree) {
+        SwitchTree switchTree = (SwitchTree) t;
+        return getType(switchTree.getExpression());
+      }
+      // TODO(b/176098078): When the ErrorProne project switches to JDK 12, we should check
+      // for SwitchExpressionTree.
+      return null;
     }
 
     @Override
@@ -2097,5 +2115,50 @@ public class ASTHelpers {
   /** Returns the start position of the node. */
   public static int getStartPosition(Tree tree) {
     return ((JCTree) tree).getStartPosition();
+  }
+
+  /** Returns a no arg private constructor for the {@link ClassTree}. */
+  public static String createPrivateConstructor(ClassTree classTree) {
+    return "private " + classTree.getSimpleName() + "() {}";
+  }
+
+  private static final Matcher<Tree> IS_BUGCHECKER =
+      isSubtypeOf("com.google.errorprone.bugpatterns.BugChecker");
+
+  /** Returns {@code true} if the code is in a BugChecker class. */
+  public static boolean isBugCheckerCode(VisitorState state) {
+    for (Tree ancestor : state.getPath()) {
+      if (IS_BUGCHECKER.matches(ancestor, state)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static final Method IS_LOCAL = getIsLocal();
+
+  private static Method getIsLocal() {
+    try {
+      return Symbol.class.getMethod("isLocal");
+    } catch (NoSuchMethodException e) {
+      // continue below
+    }
+    try {
+      return Symbol.class.getMethod("isDirectlyOrIndirectlyLocal");
+    } catch (NoSuchMethodException e) {
+      throw new LinkageError(e.getMessage(), e);
+    }
+  }
+
+  /**
+   * Returns true if the symbol is directly or indirectly local to a method or variable initializer;
+   * see [@code Symbol#isLocal} or {@code Symbol#isDirectlyOrIndirectlyLocal}.
+   */
+  public static boolean isLocal(Symbol symbol) {
+    try {
+      return (boolean) IS_LOCAL.invoke(symbol);
+    } catch (ReflectiveOperationException e) {
+      throw new LinkageError(e.getMessage(), e);
+    }
   }
 }
