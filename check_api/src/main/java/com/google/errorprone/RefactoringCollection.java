@@ -203,7 +203,7 @@ class RefactoringCollection implements DescriptionListener.Factory {
     }
   }
 
-  private final class DelegatingDescriptionListener implements DescriptionListener {
+  private static final class DelegatingDescriptionListener implements DescriptionListener {
     final DescriptionBasedDiff base;
     final DescriptionListener listener;
 

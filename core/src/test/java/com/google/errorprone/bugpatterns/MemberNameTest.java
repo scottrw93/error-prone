@@ -149,4 +149,102 @@ public class MemberNameTest {
             "}")
         .doTest();
   }
+
+  @Test
+  public void ignoreTestMissingTestAnnotation_exempted() {
+    helper
+        .addSourceLines(
+            "Test.java", //
+            "import org.junit.Ignore;",
+            "class Test {",
+            "  @Ignore",
+            "  public void possibly_a_test_name() {}",
+            "}")
+        .doTest();
+  }
+
+  @Test
+  public void superMethodAnnotatedWithAnnotationContainingTest_exempted() {
+    helper
+        .addSourceLines(
+            "Test.java", //
+            "class Test {",
+            "  @IAmATest",
+            "  public void possibly_a_test_name() {}",
+            "  private @interface IAmATest {}",
+            "}")
+        .addSourceLines(
+            "Test2.java",
+            "class Test2 extends Test {",
+            "  @Override",
+            "  public void possibly_a_test_name() {}",
+            "}")
+        .doTest();
+  }
+
+  @Test
+  public void nativeMethod_ignored() {
+    helper
+        .addSourceLines(
+            "Test.java", //
+            "class Test {",
+            "  public native void possibly_a_test_name();",
+            "}")
+        .doTest();
+  }
+
+  @Test
+  public void methodAnnotatedWithExemptedMethod_noMatch() {
+    helper
+        .addSourceLines(
+            "Property.java", //
+            "package com.pholser.junit.quickcheck;",
+            "public @interface Property {}")
+        .addSourceLines(
+            "Test.java", //
+            "class Test {",
+            "  @com.pholser.junit.quickcheck.Property",
+            "  public void possibly_a_test_name() {}",
+            "}")
+        .doTest();
+  }
+
+  @Test
+  public void methodWithUnderscores_overriddenFromSupertype_noFinding() {
+    helper
+        .addSourceLines(
+            "Base.java",
+            "abstract class Base {",
+            "  @SuppressWarnings(\"MemberName\")", // We only care about the subtype in this test.
+            "  abstract int get_some();",
+            "}")
+        .addSourceLines(
+            "Test.java",
+            "class Test extends Base {",
+            "  @Override",
+            "  public int get_some() {",
+            "    return 0;",
+            "  }",
+            "}")
+        .doTest();
+  }
+
+  @Test
+  public void methodWithUnderscores_notOverriddenFromGeneratedSupertype_bug() {
+    helper
+        .addSourceLines(
+            "Base.java",
+            "import javax.annotation.Generated;",
+            "@Generated(\"Hands\")",
+            "abstract class Base {}")
+        .addSourceLines(
+            "Test.java",
+            "class Test extends Base {",
+            "  // BUG: Diagnostic contains:",
+            "  public int get_more() {",
+            "    return 0;",
+            "  }",
+            "}")
+        .doTest();
+  }
 }

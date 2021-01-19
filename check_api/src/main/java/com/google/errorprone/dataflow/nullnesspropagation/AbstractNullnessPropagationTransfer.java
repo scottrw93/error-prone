@@ -24,13 +24,12 @@ import com.google.errorprone.annotations.CheckReturnValue;
 import com.google.errorprone.dataflow.AccessPath;
 import com.google.errorprone.dataflow.AccessPathStore;
 import com.google.errorprone.dataflow.AccessPathValues;
-import com.google.errorprone.dataflow.LocalVariableValues;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.checkerframework.shaded.dataflow.analysis.ConditionalTransferResult;
+import org.checkerframework.shaded.dataflow.analysis.ForwardTransferFunction;
 import org.checkerframework.shaded.dataflow.analysis.RegularTransferResult;
-import org.checkerframework.shaded.dataflow.analysis.TransferFunction;
 import org.checkerframework.shaded.dataflow.analysis.TransferInput;
 import org.checkerframework.shaded.dataflow.analysis.TransferResult;
 import org.checkerframework.shaded.dataflow.cfg.UnderlyingAST;
@@ -125,7 +124,7 @@ import org.checkerframework.shaded.dataflow.cfg.node.WideningConversionNode;
  * @author cpovirk@google.com (Chris Povirk)
  */
 abstract class AbstractNullnessPropagationTransfer
-    implements TransferFunction<Nullness, AccessPathStore<Nullness>> {
+    implements ForwardTransferFunction<Nullness, AccessPathStore<Nullness>> {
   @Override
   public AccessPathStore<Nullness> initialStore(
       UnderlyingAST underlyingAST, List<LocalVariableNode> parameters) {
@@ -276,7 +275,7 @@ abstract class AbstractNullnessPropagationTransfer
     return updateRegularStore(result, input, updates);
   }
 
-  Nullness visitLocalVariable(LocalVariableNode node, LocalVariableValues<Nullness> store) {
+  Nullness visitLocalVariable(LocalVariableNode node, AccessPathValues<Nullness> store) {
     return NULLABLE;
   }
 

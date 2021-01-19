@@ -205,7 +205,8 @@ public class TypeParameterNaming extends BugChecker implements TypeParameterTree
   }
 
   private static String suggestedSingleLetter(String id, Tree tree) {
-    char firstLetter = id.charAt(0);
+    char firstLetter =
+        Ascii.toUpperCase(NamingConventions.splitToLowercaseTerms(id).get(0).charAt(0));
     Symbol sym = ASTHelpers.getSymbol(tree);
     List<TypeVariableSymbol> enclosingTypeSymbols = typeVariablesEnclosing(sym);
 
@@ -227,7 +228,7 @@ public class TypeParameterNaming extends BugChecker implements TypeParameterTree
   // T -> T2
   // T2 -> T3
   // T -> T4 (if T2 and T3 already exist)
-  // TODO(siyuanl) : combine this method with TypeParameterShadowing.replacementTypeVarName
+  // TODO(user) : combine this method with TypeParameterShadowing.replacementTypeVarName
   private static String firstLetterReplacementName(String name, List<String> superTypeVars) {
     String firstLetterOfBase = Character.toString(name.charAt(0));
     int typeVarNum = 2;

@@ -115,6 +115,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.Deque;
+import java.util.Iterator;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
@@ -208,15 +209,15 @@ public class SuggestedFixes {
       }
       // walk the map of all modifiers, and accumulate a list of new modifiers to insert
       // beside an existing modifier
-      for (Modifier mod : modifierPositions.keySet()) {
-        int p = modifierPositions.get(mod);
-        if (p == -1) {
-          modifiersToWrite.add(mod);
-        } else if (!modifiersToWrite.isEmpty()) {
-          fix.replace(p, p, Joiner.on(' ').join(modifiersToWrite) + " ");
-          modifiersToWrite.clear();
-        }
-      }
+      modifierPositions.forEach(
+          (mod, p) -> {
+            if (p == -1) {
+              modifiersToWrite.add(mod);
+            } else if (!modifiersToWrite.isEmpty()) {
+              fix.replace(p, p, Joiner.on(' ').join(modifiersToWrite) + " ");
+              modifiersToWrite.clear();
+            }
+          });
     } else {
       modifiersToWrite.addAll(toAdd);
     }
@@ -310,7 +311,7 @@ public class SuggestedFixes {
       return sym.getSimpleName().toString();
     }
     if (sym.getKind() == ElementKind.CLASS) {
-      if (sym.isLocal()) {
+      if (ASTHelpers.isLocal(sym)) {
         if (!sym.isAnonymous()) {
           return sym.getSimpleName().toString();
         }
@@ -452,18 +453,23 @@ public class SuggestedFixes {
     String name = qualifiedName.substring(qualifiedName.lastIndexOf(".") + 1);
     AtomicBoolean foundConflict = new AtomicBoolean(false);
     new TreeScanner<Void, Void>() {
+      @Override
+      public Void visitMethod(MethodTree method, Void unused) {
+        process(method, method.getName());
+        return super.visitMethod(method, null);
+      }
 
       @Override
       public Void visitIdentifier(IdentifierTree ident, Void unused) {
-        process(ident);
+        process(ident, ident.getName());
         return super.visitIdentifier(ident, null);
       }
 
-      private void process(IdentifierTree ident) {
-        if (!ident.getName().contentEquals(name)) {
+      private void process(Tree tree, Name identifier) {
+        if (!identifier.contentEquals(name)) {
           return;
         }
-        Symbol symbol = getSymbol(ident);
+        Symbol symbol = getSymbol(tree);
         if (symbol == null) {
           return;
         }
@@ -612,13 +618,31 @@ public class SuggestedFixes {
       String firstMember,
       String... otherMembers) {
     checkNotNull(classTree);
-    StringBuilder stringBuilder = new StringBuilder();
-    for (String memberSnippet : Lists.asList(firstMember, otherMembers)) {
-      stringBuilder.append("\n\n").append(memberSnippet);
+    List<String> members = Lists.asList(firstMember, otherMembers);
+    return addMembers(classTree, state, where, members).get();
+  }
+
+  /**
+   * Returns a {@link Fix} that adds members defined by {@code members} to the class referenced by
+   * {@code classTree}. This method should only be called once per {@link ClassTree} as the
+   * suggestions will otherwise collide. It will return {@code Optional.empty()} if and only if
+   * {@code members} is empty.
+   */
+  public static Optional<SuggestedFix> addMembers(
+      ClassTree classTree, VisitorState state, AdditionPosition where, Iterable<String> members) {
+    // Manually desugaring a foreach over members so that we can behave differently if it's empty.
+    Iterator<String> items = members.iterator();
+    if (!items.hasNext()) {
+      return Optional.empty();
     }
+    StringBuilder stringBuilder = new StringBuilder();
+    do {
+      String item = items.next();
+      stringBuilder.append("\n\n").append(item);
+    } while (items.hasNext());
     stringBuilder.append('\n');
     int pos = where.pos(classTree, state);
-    return SuggestedFix.replace(pos, pos, stringBuilder.toString());
+    return Optional.of(SuggestedFix.replace(pos, pos, stringBuilder.toString()));
   }
 
   /**
@@ -632,8 +656,19 @@ public class SuggestedFixes {
     // handle implicit lambda parameter types
     int searchOffset = typeEndPos == -1 ? 0 : (typeEndPos - getStartPosition(tree));
     int pos = getStartPosition(tree) + state.getSourceForNode(tree).indexOf(name, searchOffset);
-    final SuggestedFix.Builder fix =
-        SuggestedFix.builder().replace(pos, pos + name.length(), replacement);
+    return SuggestedFix.builder()
+        .replace(pos, pos + name.length(), replacement)
+        .merge(renameVariableUsages(tree, replacement, state))
+        .build();
+  }
+
+  /**
+   * Renames usage of the given {@link VariableTree} in the current compilation unit to {@code
+   * replacement}.
+   */
+  public static SuggestedFix renameVariableUsages(
+      VariableTree tree, final String replacement, VisitorState state) {
+    final SuggestedFix.Builder fix = SuggestedFix.builder();
     final Symbol.VarSymbol sym = getSymbol(tree);
     new TreeScanner<Void, Void>() {
       @Override
@@ -1274,8 +1309,10 @@ public class SuggestedFixes {
     boolean warningInSameCompilationUnit = false;
     for (Diagnostic<? extends JavaFileObject> diagnostic : diagnosticListener.getDiagnostics()) {
       warningIsError |= diagnostic.getCode().equals("compiler.err.warnings.and.werror");
+      JavaFileObject diagnosticSource = diagnostic.getSource();
+      // If the source's origin is unknown, assume that new diagnostics are due to a modification.
       boolean diagnosticInSameCompilationUnit =
-          diagnostic.getSource().toUri().equals(modifiedFileUri);
+          diagnosticSource == null || diagnosticSource.toUri().equals(modifiedFileUri);
       switch (diagnostic.getKind()) {
         case ERROR:
           ++countErrors;
@@ -1389,35 +1426,36 @@ public class SuggestedFixes {
    *
    * <p>If the suggested annotation is {@code DontSuggestFixes}, return empty.
    */
-  public static Optional<SuggestedFix> suggestWhitelistAnnotation(
-      String whitelistAnnotation, TreePath where, VisitorState state) {
+  public static Optional<SuggestedFix> suggestExemptingAnnotation(
+      String exemptingAnnotation, TreePath where, VisitorState state) {
     // TODO(bangert): Support annotations that do not have @Target(CLASS).
-    if (whitelistAnnotation.equals("com.google.errorprone.annotations.DontSuggestFixes")) {
+    if (exemptingAnnotation.equals("com.google.errorprone.annotations.DontSuggestFixes")) {
       return Optional.empty();
     }
     SuggestedFix.Builder builder = SuggestedFix.builder();
-    Type whitelistAnnotationType = state.getTypeFromString(whitelistAnnotation);
-    ImmutableSet<Tree.Kind> supportedWhitelistLocationKinds;
+    Type exemptingAnnotationType = state.getTypeFromString(exemptingAnnotation);
+    ImmutableSet<Tree.Kind> supportedExemptingAnnotationLocationKinds;
     String annotationName;
 
-    if (whitelistAnnotationType != null) {
-      supportedWhitelistLocationKinds = supportedTreeTypes(whitelistAnnotationType.asElement());
-      annotationName = qualifyType(state, builder, whitelistAnnotationType);
+    if (exemptingAnnotationType != null) {
+      supportedExemptingAnnotationLocationKinds =
+          supportedTreeTypes(exemptingAnnotationType.asElement());
+      annotationName = qualifyType(state, builder, exemptingAnnotationType);
     } else {
       // If we can't resolve the type, fall back to an approximation.
-      int idx = whitelistAnnotation.lastIndexOf('.');
-      Verify.verify(idx > 0 && idx + 1 < whitelistAnnotation.length());
-      supportedWhitelistLocationKinds = TREE_TYPE_UNKNOWN_ANNOTATION;
-      annotationName = whitelistAnnotation.substring(idx + 1);
-      builder.addImport(whitelistAnnotation);
+      int idx = exemptingAnnotation.lastIndexOf('.');
+      Verify.verify(idx > 0 && idx + 1 < exemptingAnnotation.length());
+      supportedExemptingAnnotationLocationKinds = TREE_TYPE_UNKNOWN_ANNOTATION;
+      annotationName = exemptingAnnotation.substring(idx + 1);
+      builder.addImport(exemptingAnnotation);
     }
-    Optional<Tree> whitelistLocation =
+    Optional<Tree> exemptingAnnotationLocation =
         StreamSupport.stream(where.spliterator(), false)
-            .filter(tree -> supportedWhitelistLocationKinds.contains(tree.getKind()))
+            .filter(tree -> supportedExemptingAnnotationLocationKinds.contains(tree.getKind()))
             .filter(Predicates.not(SuggestedFixes::isAnonymousClassTree))
             .findFirst();
 
-    return whitelistLocation.map(
+    return exemptingAnnotationLocation.map(
         location -> builder.prefixWith(location, "@" + annotationName + " ").build());
   }
 
@@ -1432,8 +1470,8 @@ public class SuggestedFixes {
   /**
    * We assume annotations with an unknown type can be used on these Tree kinds.
    *
-   * <p>These are reasonable for whitelist-type annotations which annotate a block of code, e.g.
-   * they don't usually make sense on a variable declaration.
+   * <p>These are reasonable for exempting annotations which annotate a block of code, e.g. they
+   * don't usually make sense on a variable declaration.
    */
   private static final ImmutableSet<Tree.Kind> TREE_TYPE_UNKNOWN_ANNOTATION =
       ImmutableSet.of(
@@ -1443,13 +1481,13 @@ public class SuggestedFixes {
           Tree.Kind.ANNOTATION_TYPE,
           Tree.Kind.METHOD);
 
-  /** Returns true iff {@code suggestWhitelistAnnotation()} supports this annotation. */
-  public static boolean suggestedWhitelistAnnotationSupported(Element whitelistAnnotation) {
-    return !supportedTreeTypes(whitelistAnnotation).isEmpty();
+  /** Returns true iff {@code suggestExemptingAnnotation()} supports this annotation. */
+  public static boolean suggestedExemptingAnnotationSupported(Element exemptingAnnotation) {
+    return !supportedTreeTypes(exemptingAnnotation).isEmpty();
   }
 
-  private static ImmutableSet<Tree.Kind> supportedTreeTypes(Element whitelistAnnotation) {
-    Target targetAnnotation = whitelistAnnotation.getAnnotation(Target.class);
+  private static ImmutableSet<Tree.Kind> supportedTreeTypes(Element exemptingAnnotation) {
+    Target targetAnnotation = exemptingAnnotation.getAnnotation(Target.class);
     if (targetAnnotation == null) {
       // in the absence of further information, we assume the annotation is supported on classes and
       // methods.
@@ -1523,7 +1561,7 @@ public class SuggestedFixes {
     int startPos = getStartPosition(tree);
     // This can happen for desugared expressions like `int a, b;`.
     if (startPos < startTokenization) {
-      return SuggestedFix.builder().build();
+      return SuggestedFix.emptyFix();
     }
     // Delete backwards for comments which are not separated from our target by a blank line.
     CharSequence sourceCode = state.getSourceCode();

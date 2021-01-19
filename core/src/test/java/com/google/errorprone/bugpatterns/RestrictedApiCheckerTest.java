@@ -37,6 +37,7 @@ public class RestrictedApiCheckerTest {
   protected RestrictedApiCheckerTest(Class<? extends BugChecker> checker) {
     helper =
         CompilationTestHelper.newInstance(checker, RestrictedApiCheckerTest.class)
+            .addSourceFile("Allowlist.java")
             .addSourceFile("RestrictedApiMethods.java")
             .matchAllDiagnostics();
     refactoringTest =
@@ -173,7 +174,7 @@ public class RestrictedApiCheckerTest {
             "Testcase.java",
             "package com.google.errorprone.bugpatterns.testdata;",
             "class Testcase {",
-            "  @Whitelist    ",
+            "  @Allowlist    ",
             "  void foo() {",
             "    new RestrictedApiMethods() {};",
             "  }",
@@ -236,7 +237,7 @@ public class RestrictedApiCheckerTest {
             "Testcase.java",
             "package com.google.errorprone.bugpatterns.testdata;",
             "class Testcase {",
-            "  @WhitelistWithWarning",
+            "  @AllowlistWithWarning",
             "  void foo(RestrictedApiMethods m) {",
             "    // BUG: Diagnostic contains: lorem",
             "    m.restrictedMethod();",
@@ -255,7 +256,7 @@ public class RestrictedApiCheckerTest {
             "Testcase.java",
             "package com.google.errorprone.bugpatterns.testdata;",
             "class Testcase {",
-            "  @Whitelist",
+            "  @Allowlist",
             "  void foo(RestrictedApiMethods m) {",
             "    m.restrictedMethod();",
             "    m.accept(m::restrictedMethod);",
@@ -279,20 +280,39 @@ public class RestrictedApiCheckerTest {
             "import java.lang.annotation.Target;",
             "",
             "class Testcase {",
-            "   @Whitelist",
+            "   @Allowlist",
             "   void caller() {",
             "     restrictedMethod();",
             "   }",
             "   @RestrictedApi(",
             "     explanation=\"test\",",
-            "     whitelistAnnotations = {Whitelist.class},",
+            "     whitelistAnnotations = {Allowlist.class},",
             "     link = \"foo\"",
             "   )",
             "   void restrictedMethod() {",
             "   }",
             "   @Target({ElementType.METHOD, ElementType.CONSTRUCTOR})",
-            "   @interface Whitelist {}",
+            "   @interface Allowlist {}",
             "}")
+        .doTest();
+  }
+
+  // https://github.com/google/error-prone/issues/2099
+  @Test
+  public void i2099() {
+    helper
+        .addSourceLines(
+            "T.java",
+            "package t;",
+            "class T {",
+            "  static class Foo {",
+            "    class Loo {}",
+            "  }",
+            "  public void testFoo(Foo foo) {",
+            "    foo.new Loo() {};",
+            "  }",
+            "}")
+        .expectResult(Result.OK)
         .doTest();
   }
 }

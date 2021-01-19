@@ -122,4 +122,62 @@ public class UnnecessaryParenthesesTest {
             "}")
         .doTest();
   }
+
+  @Test
+  public void lambdaLambda() {
+    helper
+        .addSourceLines(
+            "Test.java",
+            "import java.util.function.Function;",
+            "class Test {",
+            "  Function<Void, Function<Void, Void>> r = x -> (y -> y);",
+            "}")
+        .doTest();
+  }
+
+  @Test
+  public void unaryPostFixParenthesesNotNeeded() {
+    testHelper
+        .addInputLines(
+            "Test.java",
+            "class Test {",
+            "  void print(Integer i) {",
+            "    int j = (i++) + 2;",
+            "  }",
+            "}")
+        .addOutputLines(
+            "Test.java",
+            "class Test {",
+            "  void print(Integer i) {",
+            "    int j = i++ + 2;",
+            "  }",
+            "}")
+        .doTest();
+  }
+
+  @Test
+  public void unaryPostFixParenthesesNeeded() {
+    helper
+        .addSourceLines(
+            "Test.java",
+            "class Test {",
+            "  void print(Integer i) {",
+            "    (i++).toString();",
+            "  }",
+            "}")
+        .doTest();
+  }
+
+  @Test
+  public void unaryPreFixParenthesesNeeded() {
+    helper
+        .addSourceLines(
+            "Test.java",
+            "class Test {",
+            "  void print(Integer i) {",
+            "    (++i).toString();",
+            "  }",
+            "}")
+        .doTest();
+  }
 }

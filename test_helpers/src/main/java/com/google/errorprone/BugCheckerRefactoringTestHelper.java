@@ -18,15 +18,21 @@ package com.google.errorprone;
 
 import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.collect.ImmutableList.toImmutableList;
+import static com.google.common.collect.ImmutableMap.toImmutableMap;
+import static com.google.common.collect.Streams.stream;
 import static com.google.common.truth.Truth.assertAbout;
 import static com.google.common.truth.Truth.assertThat;
+import static com.google.common.truth.Truth.assertWithMessage;
+import static com.google.errorprone.FileObjects.forResource;
+import static com.google.errorprone.FileObjects.forSourceLines;
 import static com.google.testing.compile.JavaSourceSubjectFactory.javaSource;
 import static org.junit.Assert.fail;
 
+import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Iterators;
-import com.google.common.io.CharStreams;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import com.google.errorprone.annotations.CheckReturnValue;
 import com.google.errorprone.apply.DescriptionBasedDiff;
@@ -34,7 +40,6 @@ import com.google.errorprone.apply.ImportOrganizer;
 import com.google.errorprone.apply.SourceFile;
 import com.google.errorprone.bugpatterns.BugChecker;
 import com.google.errorprone.fixes.Fix;
-import com.google.errorprone.matchers.Description;
 import com.google.errorprone.scanner.ErrorProneScanner;
 import com.google.errorprone.scanner.ErrorProneScannerTransformer;
 import com.google.errorprone.util.RuntimeVersion;
@@ -45,12 +50,15 @@ import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.TreePath;
 import com.sun.tools.javac.api.JavacTaskImpl;
 import com.sun.tools.javac.api.JavacTool;
+import com.sun.tools.javac.main.JavaCompiler;
 import com.sun.tools.javac.tree.JCTree.JCClassDecl;
 import com.sun.tools.javac.tree.JCTree.JCCompilationUnit;
 import com.sun.tools.javac.util.Context;
 import java.io.IOException;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.io.UncheckedIOException;
-import java.nio.file.FileAlreadyExistsException;
+import java.net.URI;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -136,8 +144,8 @@ public class BugCheckerRefactoringTestHelper {
   }
 
   private final Map<JavaFileObject, JavaFileObject> sources = new HashMap<>();
-  private final BugChecker refactoringBugChecker;
-  private final ErrorProneInMemoryFileManager fileManager;
+  private final Class<?> clazz;
+  private final ErrorProneScanner scanner;
 
   private FixChooser fixChooser = FixChoosers.FIRST;
   private List<String> options = ImmutableList.of();
@@ -146,14 +154,19 @@ public class BugCheckerRefactoringTestHelper {
 
   private boolean run = false;
 
-  private BugCheckerRefactoringTestHelper(BugChecker refactoringBugChecker, Class<?> clazz) {
-    this.refactoringBugChecker = refactoringBugChecker;
-    this.fileManager = new ErrorProneInMemoryFileManager(clazz);
+  private BugCheckerRefactoringTestHelper(Class<?> clazz, ErrorProneScanner scanner) {
+    this.clazz = clazz;
+    this.scanner = scanner;
   }
 
   public static BugCheckerRefactoringTestHelper newInstance(
       BugChecker refactoringBugChecker, Class<?> clazz) {
-    return new BugCheckerRefactoringTestHelper(refactoringBugChecker, clazz);
+    return new BugCheckerRefactoringTestHelper(clazz, new ErrorProneScanner(refactoringBugChecker));
+  }
+
+  public static BugCheckerRefactoringTestHelper createWithMultipleCheckers(
+      Class<?> clazz, BugChecker... checkers) {
+    return new BugCheckerRefactoringTestHelper(clazz, new ErrorProneScanner(checkers));
   }
 
   public static BugCheckerRefactoringTestHelper newInstance(
@@ -168,13 +181,11 @@ public class BugCheckerRefactoringTestHelper {
   }
 
   public BugCheckerRefactoringTestHelper.ExpectOutput addInput(String inputFilename) {
-    return new ExpectOutput(fileManager.forResource(inputFilename));
+    return new ExpectOutput(forResource(clazz, inputFilename));
   }
 
   public BugCheckerRefactoringTestHelper.ExpectOutput addInputLines(String path, String... input) {
-    String inputPath = getPath("in/", path);
-    assertThat(fileManager.exists(inputPath)).isFalse();
-    return new ExpectOutput(fileManager.forSourceLines(inputPath, input));
+    return new ExpectOutput(forSourceLines(path, input));
   }
 
   public BugCheckerRefactoringTestHelper setFixChooser(FixChooser chooser) {
@@ -241,9 +252,12 @@ public class BugCheckerRefactoringTestHelper {
     Context context = new Context();
     JCCompilationUnit tree = doCompile(input, sources.keySet(), context);
     JavaFileObject transformed = applyDiff(input, context, tree);
+    closeCompiler(context);
     testMode.verifyMatch(transformed, output);
     if (!allowBreakingChanges) {
-      doCompile(output, sources.values(), new Context());
+      Context anotherContext = new Context();
+      doCompile(output, sources.values(), anotherContext);
+      closeCompiler(anotherContext);
     }
   }
 
@@ -260,12 +274,12 @@ public class BugCheckerRefactoringTestHelper {
       throw new IllegalArgumentException("Exception during argument processing: " + e);
     }
     context.put(ErrorProneOptions.class, errorProneOptions);
-    fileManager.createAndInstallTempFolderForOutput();
+    StringWriter out = new StringWriter();
     JavacTaskImpl task =
         (JavacTaskImpl)
             tool.getTask(
-                CharStreams.nullWriter(),
-                fileManager,
+                new PrintWriter(out, true),
+                FileManagers.testFileManager(),
                 diagnosticsCollector,
                 ImmutableList.copyOf(errorProneOptions.getRemainingArgs()),
                 /*classes=*/ null,
@@ -273,11 +287,13 @@ public class BugCheckerRefactoringTestHelper {
                 context);
     Iterable<? extends CompilationUnitTree> trees = task.parse();
     task.analyze();
-    JCCompilationUnit tree =
-        Iterables.getOnlyElement(
-            Iterables.filter(
-                Iterables.filter(trees, JCCompilationUnit.class),
-                compilationUnit -> compilationUnit.getSourceFile() == input));
+    ImmutableMap<URI, ? extends CompilationUnitTree> byURI =
+        stream(trees).collect(toImmutableMap(t -> t.getSourceFile().toUri(), t -> t));
+    URI inputURI = input.toUri();
+    assertWithMessage(out + Joiner.on('\n').join(diagnosticsCollector.getDiagnostics()))
+        .that(byURI)
+        .containsKey(inputURI);
+    JCCompilationUnit tree = (JCCompilationUnit) byURI.get(inputURI);
     Iterable<Diagnostic<? extends JavaFileObject>> errorDiagnostics =
         Iterables.filter(
             diagnosticsCollector.getDiagnostics(), d -> d.getKind() == Diagnostic.Kind.ERROR);
@@ -291,16 +307,13 @@ public class BugCheckerRefactoringTestHelper {
       JavaFileObject sourceFileObject, Context context, JCCompilationUnit tree) throws IOException {
     ImportOrganizer importOrganizer = ImportOrderParser.getImportOrganizer(importOrder);
     final DescriptionBasedDiff diff = DescriptionBasedDiff.create(tree, importOrganizer);
-    transformer(refactoringBugChecker)
+    transformer()
         .apply(
             new TreePath(tree),
             context,
-            new DescriptionListener() {
-              @Override
-              public void onDescribed(Description description) {
-                if (!description.fixes.isEmpty()) {
-                  diff.handleFix(fixChooser.choose(description.fixes));
-                }
+            description -> {
+              if (!description.fixes.isEmpty()) {
+                diff.handleFix(fixChooser.choose(description.fixes));
               }
             });
     SourceFile sourceFile = SourceFile.create(sourceFileObject);
@@ -322,8 +335,7 @@ public class BugCheckerRefactoringTestHelper {
     return tree.getPackage().packge.package_info.toString();
   }
 
-  private ErrorProneScannerTransformer transformer(BugChecker bugChecker) {
-    ErrorProneScanner scanner = new ErrorProneScanner(bugChecker);
+  private ErrorProneScannerTransformer transformer() {
     return ErrorProneScannerTransformer.create(scanner);
   }
 
@@ -336,15 +348,11 @@ public class BugCheckerRefactoringTestHelper {
     }
 
     public BugCheckerRefactoringTestHelper addOutputLines(String path, String... output) {
-      String outputPath = getPath("out/", path);
-      if (fileManager.exists(outputPath)) {
-        throw new UncheckedIOException(new FileAlreadyExistsException(outputPath));
-      }
-      return addInputAndOutput(input, fileManager.forSourceLines(outputPath, output));
+      return addInputAndOutput(input, forSourceLines(path, output));
     }
 
     public BugCheckerRefactoringTestHelper addOutput(String outputFilename) {
-      return addInputAndOutput(input, fileManager.forResource(outputFilename));
+      return addInputAndOutput(input, forResource(clazz, outputFilename));
     }
 
     public BugCheckerRefactoringTestHelper expectUnchanged() {
@@ -352,10 +360,10 @@ public class BugCheckerRefactoringTestHelper {
     }
   }
 
-  private String getPath(String prefix, String path) {
-    // return prefix + path;
-    int insertAt = path.lastIndexOf('/');
-    insertAt = insertAt == -1 ? 0 : insertAt + 1;
-    return new StringBuilder(path).insert(insertAt, prefix + "/").toString();
+  private static void closeCompiler(Context context) {
+    JavaCompiler compiler = context.get(JavaCompiler.compilerKey);
+    if (compiler != null) {
+      compiler.close();
+    }
   }
 }
