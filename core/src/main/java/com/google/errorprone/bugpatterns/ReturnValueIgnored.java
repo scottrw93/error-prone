@@ -142,12 +142,23 @@ public class ReturnValueIgnored extends AbstractReturnValueIgnored {
   private static final Matcher<ExpressionTree> ARRAYS_METHODS =
       staticMethod().onClass("java.util.Arrays");
 
+  /**
+   * The return values of {@link java.util.Optional} static methods and some instance methods should
+   * always be checked.
+   */
+  private static final Matcher<ExpressionTree> OPTIONAL_METHODS =
+      anyOf(
+          staticMethod().onClass("java.util.Optional"),
+          instanceMethod().onExactClass("java.util.Optional").named("isPresent"),
+          instanceMethod().onExactClass("java.util.Optional").named("isEmpty"));
+
   private static final Matcher<? super ExpressionTree> SPECIALIZED_MATCHER =
       anyOf(
           RETURNS_SAME_TYPE,
           ReturnValueIgnored::functionalMethod,
           STREAM_METHOD,
           ARRAYS_METHODS,
+          OPTIONAL_METHODS,
           ReturnValueIgnored::javaTimeTypes,
           instanceMethod()
               .onDescendantOf("java.util.Collection")

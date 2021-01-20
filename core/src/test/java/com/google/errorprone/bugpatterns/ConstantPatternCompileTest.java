@@ -89,6 +89,44 @@ public class ConstantPatternCompileTest {
   }
 
   @Test
+  public void testFixGeneration_multiplePatterns() {
+    testHelper
+        .addInputLines(
+            "in/Test.java",
+            "import java.util.regex.Pattern;",
+            "class Test {",
+            "  public static boolean match() {",
+            "    String line = \"abcd\";",
+            "    Pattern p1 = Pattern.compile(\"a+\");",
+            "    Pattern p2 = Pattern.compile(\"b+\");",
+            "    if (p1.matcher(line).matches() && p2.matcher(line).matches()) {",
+            "      return true;",
+            "    }",
+            "    Pattern p3 = Pattern.compile(\"c+\");",
+            "    Pattern p4 = Pattern.compile(\"d+\");",
+            "    return p3.matcher(line).matches() && p4.matcher(line).matches();",
+            "  }",
+            "}")
+        .addOutputLines(
+            "in/Test.java",
+            "import java.util.regex.Pattern;",
+            "class Test {",
+            "  public static boolean match() {",
+            "    String line = \"abcd\";",
+            "    if (P1.matcher(line).matches() && P2.matcher(line).matches()) {",
+            "      return true;",
+            "    }",
+            "    return P3.matcher(line).matches() && P4.matcher(line).matches();",
+            "  }",
+            "  private static final Pattern P1 = Pattern.compile(\"a+\");",
+            "  private static final Pattern P2 = Pattern.compile(\"b+\");",
+            "  private static final Pattern P3 = Pattern.compile(\"c+\");",
+            "  private static final Pattern P4 = Pattern.compile(\"d+\");",
+            "}")
+        .doTest();
+  }
+
+  @Test
   public void testFixGenerationWithJavadoc() {
     testHelper
         .addInputLines(
@@ -170,6 +208,28 @@ public class ConstantPatternCompileTest {
             "  private final String patString = \"a+\";",
             "  private void patternCompileOnNonStaticArg() {",
             "    Pattern pattern = Pattern.compile(patString);",
+            "  }",
+            "}")
+        .doTest();
+  }
+
+  @Test
+  public void testNegativeCases_multiArg() {
+    compilationHelper
+        .addSourceLines(
+            "in/Test.java",
+            "import com.google.errorprone.annotations.CompileTimeConstant;",
+            "import java.util.regex.Matcher;",
+            "import java.util.regex.Pattern;",
+            "class Test {",
+            "  public static int getMatchCount(CharSequence content, String regex) {",
+            "  int count = 0;",
+            "  Pattern pattern = Pattern.compile(regex, Pattern.MULTILINE);",
+            "  Matcher matcher = pattern.matcher(content);",
+            "  while (matcher.find()) {",
+            "    count++;",
+            "  }",
+            "  return count;",
             "  }",
             "}")
         .doTest();

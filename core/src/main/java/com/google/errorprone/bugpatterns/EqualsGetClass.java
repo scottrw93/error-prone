@@ -21,6 +21,7 @@ import static com.google.errorprone.BugPattern.SeverityLevel.WARNING;
 import static com.google.errorprone.matchers.Matchers.allOf;
 import static com.google.errorprone.matchers.Matchers.anyOf;
 import static com.google.errorprone.matchers.Matchers.equalsMethodDeclaration;
+import static com.google.errorprone.matchers.Matchers.instanceEqualsInvocation;
 import static com.google.errorprone.matchers.method.MethodMatchers.instanceMethod;
 import static com.google.errorprone.util.ASTHelpers.getReceiver;
 import static com.google.errorprone.util.ASTHelpers.getStartPosition;
@@ -33,6 +34,7 @@ import com.google.errorprone.bugpatterns.BugChecker.MethodInvocationTreeMatcher;
 import com.google.errorprone.fixes.SuggestedFix;
 import com.google.errorprone.matchers.Description;
 import com.google.errorprone.matchers.Matcher;
+import com.google.errorprone.matchers.Matchers;
 import com.sun.source.tree.BinaryTree;
 import com.sun.source.tree.BlockTree;
 import com.sun.source.tree.ClassTree;
@@ -117,12 +119,6 @@ public final class EqualsGetClass extends BugChecker implements MethodInvocation
             allOf(GET_CLASS, (tree, unused) -> matchesThis(tree)),
             (tree, unused) -> matchesClass(tree));
 
-    private static final Matcher<ExpressionTree> EQUALS =
-        instanceMethod()
-            .onDescendantOf("java.lang.Object")
-            .named("equals")
-            .withParameters("java.lang.Object");
-
     private static boolean matchesThis(ExpressionTree tree) {
       ExpressionTree receiver = getReceiver(tree);
       if (receiver == null) {
@@ -148,10 +144,6 @@ public final class EqualsGetClass extends BugChecker implements MethodInvocation
       }
       VarSymbol varSymbol = (VarSymbol) symbol;
       return varSymbol.getSimpleName().contentEquals("class");
-    }
-
-    private static boolean matchesNull(ExpressionTree tree) {
-      return tree.getKind() == Kind.NULL_LITERAL;
     }
 
     private final Symbol parameter;
@@ -183,7 +175,7 @@ public final class EqualsGetClass extends BugChecker implements MethodInvocation
       if (binaryTree.getKind() != Kind.NOT_EQUAL_TO && binaryTree.getKind() != Kind.EQUAL_TO) {
         return super.visitBinary(binaryTree, null);
       }
-      if (matchesEitherWay(binaryTree, isParameter, (tree, s) -> matchesNull(tree))) {
+      if (matchesEitherWay(binaryTree, isParameter, Matchers.nullLiteral())) {
         if (binaryTree.getKind() == Kind.NOT_EQUAL_TO) {
           makeAlwaysTrue();
         }
@@ -209,7 +201,7 @@ public final class EqualsGetClass extends BugChecker implements MethodInvocation
 
     @Override
     public Void visitMethodInvocation(MethodInvocationTree node, Void unused) {
-      if (!EQUALS.matches(node, state)) {
+      if (!instanceEqualsInvocation().matches(node, state)) {
         return null;
       }
       ExpressionTree argument = getOnlyElement(node.getArguments());
@@ -310,7 +302,7 @@ public final class EqualsGetClass extends BugChecker implements MethodInvocation
     }
 
     private SuggestedFix getFix() {
-      return matchedGetClass && !failed ? fix.build() : SuggestedFix.builder().build();
+      return matchedGetClass && !failed ? fix.build() : SuggestedFix.emptyFix();
     }
   }
 }

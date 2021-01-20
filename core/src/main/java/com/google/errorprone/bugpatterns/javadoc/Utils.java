@@ -20,6 +20,7 @@ import static com.google.errorprone.names.LevenshteinEditDistance.getEditDistanc
 
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.fixes.SuggestedFix;
+import com.google.errorprone.util.ASTHelpers;
 import com.sun.source.doctree.DocCommentTree;
 import com.sun.source.doctree.DocTree;
 import com.sun.source.tree.CompilationUnitTree;
@@ -38,16 +39,12 @@ import javax.annotation.Nullable;
 
 /** Common utility methods for fixing Javadocs. */
 final class Utils {
-
-  /** Maximum edit distance for fixing parameter names and tags. */
-  private static final int EDIT_LIMIT = 5;
-
-  static Optional<String> getBestMatch(String to, Iterable<String> choices) {
+  static Optional<String> getBestMatch(String to, int maxEditDistance, Iterable<String> choices) {
     String bestMatch = null;
     int minDistance = Integer.MAX_VALUE;
     for (String choice : choices) {
       int distance = getEditDistance(to, choice);
-      if (distance < minDistance && distance < EDIT_LIMIT) {
+      if (distance < minDistance && distance < maxEditDistance) {
         bestMatch = choice;
         minDistance = distance;
       }
@@ -67,7 +64,7 @@ final class Utils {
     int endPos =
         (int) positions.getEndPosition(compilationUnitTree, getDocCommentTree(state), docTree);
     if (endPos == Position.NOPOS) {
-      return SuggestedFix.builder().build();
+      return SuggestedFix.emptyFix();
     }
     return SuggestedFix.replace(startPos, endPos, replacement);
   }
@@ -91,6 +88,11 @@ final class Utils {
   static DiagnosticPosition diagnosticPosition(DocTreePath path, VisitorState state) {
     int startPosition = getStartPosition(path.getLeaf(), state);
     Tree tree = path.getTreePath().getLeaf();
+    if (startPosition == Position.NOPOS) {
+      // javac doesn't seem to store positions for e.g. trivial empty javadoc like `/** */`
+      // see: https://github.com/google/error-prone/issues/1981
+      startPosition = ASTHelpers.getStartPosition(tree);
+    }
     return getDiagnosticPosition(startPosition, tree);
   }
 

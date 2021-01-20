@@ -20,6 +20,7 @@ import static com.google.common.collect.Streams.stream;
 import static com.google.errorprone.BugPattern.SeverityLevel.SUGGESTION;
 import static com.google.errorprone.fixes.SuggestedFixes.addMembers;
 import static com.google.errorprone.matchers.Description.NO_MATCH;
+import static com.google.errorprone.util.ASTHelpers.createPrivateConstructor;
 import static com.google.errorprone.util.ASTHelpers.getSymbol;
 import static com.google.errorprone.util.ASTHelpers.hasAnnotation;
 import static com.google.errorprone.util.ASTHelpers.isGeneratedConstructor;
@@ -32,12 +33,15 @@ import com.google.common.collect.ImmutableList;
 import com.google.errorprone.BugPattern;
 import com.google.errorprone.VisitorState;
 import com.google.errorprone.bugpatterns.BugChecker.ClassTreeMatcher;
+import com.google.errorprone.fixes.SuggestedFix;
+import com.google.errorprone.fixes.SuggestedFixes;
 import com.google.errorprone.matchers.Description;
 import com.sun.source.tree.BlockTree;
 import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.Tree;
 import com.sun.source.tree.VariableTree;
+import javax.lang.model.element.Modifier;
 
 /** @author gak@google.com (Gregory Kick) */
 @BugPattern(
@@ -53,10 +57,12 @@ public final class PrivateConstructorForUtilityClass extends BugChecker
   @Override
   public Description matchClass(ClassTree classTree, VisitorState state) {
     if (!classTree.getKind().equals(CLASS)
+        || classTree.getModifiers().getFlags().contains(Modifier.ABSTRACT)
         || classTree.getExtendsClause() != null
         || !classTree.getImplementsClause().isEmpty()
         || isInPrivateScope(state)
-        || hasAnnotation(getSymbol(classTree), "org.junit.runner.RunWith", state)) {
+        || hasAnnotation(getSymbol(classTree), "org.junit.runner.RunWith", state)
+        || hasAnnotation(getSymbol(classTree), "org.robolectric.annotation.Implements", state)) {
       return NO_MATCH;
     }
 
@@ -70,8 +76,11 @@ public final class PrivateConstructorForUtilityClass extends BugChecker
         || nonSyntheticMembers.stream().anyMatch(PrivateConstructorForUtilityClass::isInstance)) {
       return NO_MATCH;
     }
-    return describeMatch(
-        classTree, addMembers(classTree, state, "private " + classTree.getSimpleName() + "() {}"));
+    SuggestedFix.Builder fix =
+        SuggestedFix.builder()
+            .merge(addMembers(classTree, state, createPrivateConstructor(classTree)));
+    SuggestedFixes.addModifiers(classTree, state, Modifier.FINAL).ifPresent(fix::merge);
+    return describeMatch(classTree, fix.build());
   }
 
   private static boolean isInPrivateScope(VisitorState state) {
