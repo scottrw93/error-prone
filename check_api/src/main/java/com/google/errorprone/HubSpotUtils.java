@@ -21,32 +21,54 @@ import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
+
+import javax.swing.RowFilter.Entry;
 
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import com.google.errorprone.annotations.Immutable;
 import com.google.errorprone.bugpatterns.BugChecker;
 import com.google.errorprone.descriptionlistener.CustomDescriptionListenerFactory;
 import com.google.errorprone.descriptionlistener.DescriptionListenerResources;
 import com.google.errorprone.matchers.Suppressible;
 import com.google.errorprone.scanner.ScannerSupplier;
+import com.sun.tools.javac.util.Context;
 
-public class HubSpotErrorHandler {
+public class HubSpotUtils {
+  private static final String OVERWATCH_DIR_ENV_VAR = "MAVEN_PROJECTBASEDIR";
+  private static final String BLAZAR_DIR_ENV_VAR = "VIEWABLE_BUILD_ARTIFACTS_DIR";
   private static final ObjectMapper MAPPER = new ObjectMapper();
+  private static final Comparator<Map.Entry<String, Long>> TIMING_COMPARATOR = buildTimingComparator();
+  private static final JavaType ERROR_DATA_TYPE = MAPPER
+      .getTypeFactory()
+      .constructMapType(
+          HashMap.class,
+          MAPPER.getTypeFactory().constructType(String.class),
+          MAPPER.getTypeFactory().constructCollectionType(Set.class, String.class));
+  private static final JavaType TIMINGS_DATA_TYPE = MAPPER.getTypeFactory()
+      .constructMapType(
+          HashMap.class,
+          String.class,
+          Long.class);
   private static final String EXCEPTIONS = "errorProneExceptions";
   private static final String MISSING = "errorProneMissingChecks";
   private static final String INIT_ERROR = "errorProneInitErrors";
   private static final String LISTENER_INIT_ERRORS = "errorProneListenerInitErrors";
   private static final Map<String, Set<String>> DATA = loadExistingData();
+  private static final Map<String, Long> PREVIOUS_TIMING_DATA = loadExistingTimings();
+  private static final Map<String, Long> TIMING_DATA = new ConcurrentHashMap<>();
 
   public static ScannerSupplier createScannerSupplier(Iterable<BugChecker> extraBugCheckers) {
     ImmutableList.Builder<BugCheckerInfo> builder = ImmutableList.builder();
@@ -77,12 +99,12 @@ public class HubSpotErrorHandler {
     return listeners.build();
   }
 
-  public static boolean isEnabled(DescriptionListenerResources resources) {
-    return isEnabled(resources.getContext().get(ErrorProneFlags.class));
+  public static boolean isErrorHandlingEnabled(DescriptionListenerResources resources) {
+    return isErrorHandlingEnabled(resources.getContext().get(ErrorProneFlags.class));
   }
 
-  public static boolean isEnabled(ErrorProneOptions options) {
-    return isEnabled(options.getFlags());
+  public static boolean isErrorHandlingEnabled(ErrorProneOptions options) {
+    return isErrorHandlingEnabled(options.getFlags());
   }
 
   public static void recordError(Suppressible s) {
@@ -99,7 +121,15 @@ public class HubSpotErrorHandler {
     flushErrors();
   }
 
-  private static boolean isEnabled(ErrorProneFlags flags) {
+  public static void recordTimings(Context context) {
+    ErrorProneTimings.instance(context)
+        .timings()
+        .forEach((k, v) -> TIMING_DATA.put(k, v.toMillis()));
+
+    flushTimings();
+  }
+
+  private static boolean isErrorHandlingEnabled(ErrorProneFlags flags) {
     if (flags == null) {
       return false;
     }
@@ -132,29 +162,61 @@ public class HubSpotErrorHandler {
   }
 
   private static void flushErrors() {
-    Optional<Path> output = getOutput();
-    if (!output.isPresent()) {
-      return;
-    }
+    getErrorOutput().ifPresent(p -> flush(DATA, p));
+  }
 
-    try (OutputStream stream = Files.newOutputStream(output.get())) {
-      MAPPER.writeValue(stream, DATA);
+  private static void flushTimings() {
+    getTimingsOutput().ifPresent(p -> flush(computeFinalTimings(), p));
+  }
+
+  private static Map<String, Long> computeFinalTimings() {
+    Map<String, Long> res = new HashMap<>(PREVIOUS_TIMING_DATA);
+    TIMING_DATA.forEach(
+        (k, newValue) -> res.compute(
+            k,
+            (key, oldValue) -> oldValue == null ? newValue : oldValue + newValue));
+
+    res.put(
+        "total",
+        res.entrySet()
+            .stream()
+            .filter(e -> !e.getKey().equals("total"))
+            .mapToLong(Map.Entry::getValue)
+            .sum());
+
+    return res.entrySet()
+        .stream()
+        .sorted(TIMING_COMPARATOR)
+        .collect(ImmutableMap.toImmutableMap(
+            Map.Entry::getKey,
+            Map.Entry::getValue));
+  }
+
+  private static void flush(Object data, Path path) {
+    try (OutputStream stream = Files.newOutputStream(path)) {
+      MAPPER.writerWithDefaultPrettyPrinter().writeValue(stream, data);
     } catch (IOException e) {
       throw new RuntimeException(
-          String.format("Failed to write errorprone metadata to %s", output)
+          String.format("Failed to write errorprone metadata to %s", path)
       );
     }
   }
 
   private static Map<String, Set<String>> loadExistingData() {
-    return getOutput()
-        .map(HubSpotErrorHandler::loadData)
-        .map(HubSpotErrorHandler::toDataSet)
+    return getErrorOutput()
+        .map(HubSpotUtils::loadData)
+        .map(HubSpotUtils::toDataSet)
         .orElseGet(ConcurrentHashMap::new);
   }
 
+  private static Map<String, Long> loadExistingTimings() {
+    return getTimingsOutput()
+        .map(HubSpotUtils::loadTimingData)
+        .orElseGet(ImmutableMap::of);
+  }
+
   private static Map<String, Set<String>> toDataSet(Map<String, Set<String>> data) {
-    ConcurrentHashMap<String, Set<String>> map = new ConcurrentHashMap<>();
+    ConcurrentHashMap<String, Set<String>> map = new ConcurrentHashMap<>(data.size());
     data.forEach((k, v) -> {
       Set<String> set = ConcurrentHashMap.newKeySet(v.size());
       set.addAll(v);
@@ -165,19 +227,17 @@ public class HubSpotErrorHandler {
   }
 
   private static Map<String, Set<String>> loadData(Path path) {
+    return loadData(path, ERROR_DATA_TYPE);
+  }
+
+  private static Map<String, Long> loadTimingData(Path path) {
+    return loadData(path, TIMINGS_DATA_TYPE);
+  }
+
+  private static <T, U> Map<T, U> loadData(Path path, JavaType type) {
     if (!Files.exists(path)) {
       return ImmutableMap.of();
     }
-
-    JavaType type = MAPPER
-        .getTypeFactory()
-        .constructMapType(
-            HashMap.class,
-            MAPPER.getTypeFactory().constructType(String.class),
-            MAPPER
-                .getTypeFactory()
-                .constructCollectionType(Set.class, String.class)
-        );
 
     try {
       return MAPPER.readValue(path.toFile(), type);
@@ -186,17 +246,23 @@ public class HubSpotErrorHandler {
     }
   }
 
-  private static Optional<Path> getOutput() {
-    return getOutputDir().map(o -> o.resolve("error-prone-exceptions.json"));
+  private static Optional<Path> getErrorOutput() {
+    return getDataDir(OVERWATCH_DIR_ENV_VAR, "target/overwatch-metadata")
+        .map(o -> o.resolve("error-prone-exceptions.json"));
   }
 
-  private static Optional<Path> getOutputDir() {
-    String dir = System.getenv("MAVEN_PROJECTBASEDIR");
+  private static Optional<Path> getTimingsOutput() {
+    return getDataDir(BLAZAR_DIR_ENV_VAR, "error-prone")
+        .map(o -> o.resolve("error-prone-timings.json"));
+  }
+
+  private static Optional<Path> getDataDir(String envVar, String pathToAppend) {
+    String dir = System.getenv(envVar);
     if (Strings.isNullOrEmpty(dir)) {
       return Optional.empty();
     }
 
-    Path res = Paths.get(dir).resolve("target/overwatch-metadata");
+    Path res = Paths.get(dir).resolve(pathToAppend);
     if (!Files.exists(res)) {
       try {
         Files.createDirectories(res);
@@ -211,7 +277,12 @@ public class HubSpotErrorHandler {
     return Optional.of(res);
   }
 
-  private HubSpotErrorHandler() {
+  private static Comparator<Map.Entry<String, Long>> buildTimingComparator() {
+    Comparator<Map.Entry<String, Long>> comp = Comparator.comparing(Map.Entry::getValue);
+    return comp.reversed().thenComparing(Map.Entry::getKey);
+  }
+
+  private HubSpotUtils() {
     throw new AssertionError();
   }
 }
