@@ -21,6 +21,7 @@ import static com.google.common.collect.ImmutableSet.toImmutableSet;
 import com.google.common.collect.ImmutableSet;
 import com.google.errorprone.annotations.CheckReturnValue;
 import com.google.errorprone.annotations.Immutable;
+import com.google.errorprone.hubspot.HubSpotUtils;
 import com.google.errorprone.matchers.Suppressible;
 import com.google.errorprone.suppliers.Supplier;
 import com.google.errorprone.util.ASTHelpers;
@@ -93,9 +94,17 @@ public class SuppressionInfo {
     if (inGeneratedCode && suppressedInGeneratedCode) {
       return SuppressedState.SUPPRESSED;
     }
-    if (suppressible.supportsSuppressWarnings()
-        && !Collections.disjoint(suppressible.allNames(), suppressWarningsStrings)) {
-      return SuppressedState.SUPPRESSED;
+
+    if (HubSpotUtils.isCanonicalSuppressionEnabled(state)) {
+      if (suppressible.supportsSuppressWarnings()
+          && suppressWarningsStrings.contains(suppressible.canonicalName())) {
+        return SuppressedState.SUPPRESSED;
+      }
+    } else {
+      if (suppressible.supportsSuppressWarnings()
+          && !Collections.disjoint(suppressible.allNames(), suppressWarningsStrings)) {
+        return SuppressedState.SUPPRESSED;
+      }
     }
     if (suppressible.suppressedByAnyOf(customSuppressions, state)) {
       return SuppressedState.SUPPRESSED;

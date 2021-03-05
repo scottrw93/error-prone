@@ -37,6 +37,7 @@ import com.google.errorprone.DescriptionListener;
 import com.google.errorprone.ErrorProneFlags;
 import com.google.errorprone.ErrorProneOptions;
 import com.google.errorprone.ErrorProneTimings;
+import com.google.errorprone.VisitorState;
 import com.google.errorprone.bugpatterns.BugChecker;
 import com.google.errorprone.descriptionlistener.CustomDescriptionListenerFactory;
 import com.google.errorprone.descriptionlistener.DescriptionListenerResources;
@@ -101,6 +102,17 @@ public class HubSpotUtils {
 
   public static boolean isErrorHandlingEnabled(ErrorProneOptions options) {
     return isErrorHandlingEnabled(options.getFlags());
+  }
+
+  public static boolean isCanonicalSuppressionEnabled(VisitorState visitorState) {
+    ErrorProneFlags flags = visitorState.errorProneOptions().getFlags();
+    if (flags == null) {
+      return false;
+    }
+
+    return flags
+        .getBoolean("hubspot:canonical-suppression")
+        .orElse(false);
   }
 
   public static void recordError(Suppressible s) {
