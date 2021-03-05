@@ -111,7 +111,7 @@ public class HubSpotUtils {
     }
 
     return flags
-        .getBoolean("hubspot:canonical-suppression")
+        .getBoolean("hubspot:canonical-suppressions-only")
         .orElse(false);
   }
 
