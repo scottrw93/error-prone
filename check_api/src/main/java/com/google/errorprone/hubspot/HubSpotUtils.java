@@ -17,16 +17,20 @@
 package com.google.errorprone.hubspot;
 
 import java.io.IOException;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.PathMatcher;
+import java.nio.file.Paths;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Pattern;
 
 import com.fasterxml.jackson.databind.JavaType;
 import com.google.common.base.Strings;
@@ -43,6 +47,8 @@ import com.google.errorprone.descriptionlistener.CustomDescriptionListenerFactor
 import com.google.errorprone.descriptionlistener.DescriptionListenerResources;
 import com.google.errorprone.matchers.Suppressible;
 import com.google.errorprone.scanner.ScannerSupplier;
+import com.google.errorprone.suppliers.Supplier;
+import com.google.errorprone.util.ASTHelpers;
 import com.sun.source.util.JavacTask;
 import com.sun.tools.javac.api.BasicJavacTask;
 import com.sun.tools.javac.util.Context;
@@ -63,9 +69,12 @@ public class HubSpotUtils {
   private static final String MISSING = "errorProneMissingChecks";
   private static final String INIT_ERROR = "errorProneInitErrors";
   private static final String LISTENER_INIT_ERRORS = "errorProneListenerInitErrors";
+  private static final String ERROR_REPORTING_FLAG = "hubspot:error-reporting";
+  private static final String GENERATED_SOURCES_FLAG = "hubspot:generated-sources-pattern";
   private static final Map<String, Set<String>> DATA = loadExistingData();
   private static final Map<String, Long> PREVIOUS_TIMING_DATA = loadExistingTimings();
   private static final Map<String, Long> TIMING_DATA = new ConcurrentHashMap<>();
+  private static final Supplier<PathMatcher> GENERATED_PATTERN = VisitorState.memoize(getGeneratedPathsMatcher());
 
   public static ScannerSupplier createScannerSupplier(Iterable<BugChecker> extraBugCheckers) {
     ImmutableList.Builder<BugCheckerInfo> builder = ImmutableList.builder();
@@ -97,22 +106,25 @@ public class HubSpotUtils {
   }
 
   public static boolean isErrorHandlingEnabled(DescriptionListenerResources resources) {
-    return isErrorHandlingEnabled(resources.getContext().get(ErrorProneFlags.class));
+    return isFlagEnabled(ERROR_REPORTING_FLAG, resources.getContext().get(ErrorProneFlags.class));
   }
 
   public static boolean isErrorHandlingEnabled(ErrorProneOptions options) {
-    return isErrorHandlingEnabled(options.getFlags());
+    return isFlagEnabled(ERROR_REPORTING_FLAG, options);
   }
 
   public static boolean isCanonicalSuppressionEnabled(VisitorState visitorState) {
-    ErrorProneFlags flags = visitorState.errorProneOptions().getFlags();
-    if (flags == null) {
-      return false;
-    }
+    return isFlagEnabled("hubspot:canonical-suppressions-only", visitorState.errorProneOptions());
+  }
 
-    return flags
-        .getBoolean("hubspot:canonical-suppressions-only")
-        .orElse(false);
+  public static boolean isGeneratedCodeInspectionEnabled(VisitorState visitorState) {
+    return isFlagEnabled("hubspot:generated-code-inspection", visitorState.errorProneOptions());
+  }
+
+  public static boolean isGenerated(VisitorState state) {
+    return GENERATED_PATTERN
+        .get(state)
+        .matches(Paths.get(ASTHelpers.getFileName(state.getPath().getCompilationUnit())));
   }
 
   public static void recordError(Suppressible s) {
@@ -139,13 +151,24 @@ public class HubSpotUtils {
     });
   }
 
-  private static boolean isErrorHandlingEnabled(ErrorProneFlags flags) {
+  private static Supplier<PathMatcher> getGeneratedPathsMatcher() {
+    return visitorState -> Optional.ofNullable(visitorState.errorProneOptions().getFlags())
+        .flatMap(f -> f.get(GENERATED_SOURCES_FLAG))
+        .map(s -> FileSystems.getDefault().getPathMatcher(s))
+        .orElseThrow(() -> new IllegalStateException("Must specify flag " + GENERATED_SOURCES_FLAG));
+  }
+
+  private static boolean isFlagEnabled(String flag, ErrorProneOptions errorProneOptions) {
+    return isFlagEnabled(flag, errorProneOptions.getFlags());
+  }
+
+  private static boolean isFlagEnabled(String flag, ErrorProneFlags flags) {
     if (flags == null) {
       return false;
     }
 
     return flags
-        .getBoolean("hubspot:error-reporting")
+        .getBoolean(flag)
         .orElse(false);
   }
 
