@@ -174,6 +174,12 @@ public class HubSpotUtils {
     });
   }
 
+  public static void recordCheckLoadError(Throwable t) {
+    DATA.computeIfAbsent(INIT_ERROR, ignored -> ConcurrentHashMap.newKeySet())
+        .add(toErrorMessage(t));
+  }
+
+
   private static Supplier<PathMatcher> getGeneratedPathsMatcher() {
     return visitorState -> Optional.ofNullable(visitorState.errorProneOptions().getFlags())
         .flatMap(f -> f.get(GENERATED_SOURCES_FLAG))
@@ -193,11 +199,6 @@ public class HubSpotUtils {
     return flags
         .getBoolean(flag)
         .orElse(false);
-  }
-
-  private static void recordCheckLoadError(Throwable t) {
-    DATA.computeIfAbsent(INIT_ERROR, ignored -> ConcurrentHashMap.newKeySet())
-        .add(toErrorMessage(t));
   }
 
   private static void recordListenerInitError(Throwable t) {

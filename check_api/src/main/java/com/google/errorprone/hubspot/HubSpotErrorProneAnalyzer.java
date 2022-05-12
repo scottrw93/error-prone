@@ -16,22 +16,40 @@
 
 package com.google.errorprone.hubspot;
 
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.ServiceLoader;
 import java.util.Set;
 
-import com.google.errorprone.DescriptionListener;
+import javax.tools.JavaFileManager;
+import javax.tools.StandardLocation;
+
+import com.google.common.base.Splitter;
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Iterables;
 import com.google.errorprone.ErrorProneAnalyzer;
 import com.google.errorprone.ErrorProneOptions;
-import com.google.errorprone.bugpatterns.BugChecker;
+import com.google.errorprone.ErrorProneOptions.Severity;
+import com.google.errorprone.InvalidCommandLineOptionException;
 import com.sun.source.util.TaskEvent;
 import com.sun.source.util.TaskEvent.Kind;
 import com.sun.source.util.TaskListener;
+import com.sun.source.util.TreePath;
+import com.sun.tools.javac.api.JavacTrees;
+import com.sun.tools.javac.processing.JavacProcessingEnvironment;
+import com.sun.tools.javac.tree.JCTree.JCCompilationUnit;
 import com.sun.tools.javac.util.Context;
 
 public class HubSpotErrorProneAnalyzer implements TaskListener {
+  private static final String MODULE_CHECKS_FLAG = "hubspot:module-checks";
   private final Context context;
   private final ErrorProneOptions options;
   private final ErrorProneAnalyzer delegate;
-  private final Set<ModuleBugChecker> moduleBugCheckers;
+  private final ModuleBugCheckerAnalyzer analyzer;
 
   public static TaskListener wrap(Context context, ErrorProneOptions options, ErrorProneAnalyzer analyzer) {
     return new HubSpotErrorProneAnalyzer(context, options, analyzer);
@@ -41,7 +59,7 @@ public class HubSpotErrorProneAnalyzer implements TaskListener {
     this.context = context;
     this.options = options;
     this.delegate = delegate;
-    this.moduleBugCheckers =
+    this.analyzer = new ModuleBugCheckerAnalyzer(context, options);
   }
 
   @Override
@@ -63,7 +81,10 @@ public class HubSpotErrorProneAnalyzer implements TaskListener {
   @Override
   public void finished(TaskEvent taskEvent) {
     if (taskEvent.getKind() == Kind.COMPILATION) {
+      analyzer.runChecks();
       HubSpotLifecycleManager.instance(context).handleShutdown();
+    } else {
+      analyzer.addContext(taskEvent);
     }
 
     try {
@@ -75,6 +96,4 @@ public class HubSpotErrorProneAnalyzer implements TaskListener {
       throw t;
     }
   }
-
-  private Set<ModuleBugChecker> loadModule
 }
