@@ -183,6 +183,10 @@ public class ErrorProneAnalyzer implements TaskListener {
     }
   }
 
+  public Set<Tree> getSeen() {
+    return seen;
+  }
+
   private static Object getDetailValue(CompletionFailure completionFailure) {
     try {
       // The return type of getDetailValue() changed from Object to JCDiagnostic in JDK 10,

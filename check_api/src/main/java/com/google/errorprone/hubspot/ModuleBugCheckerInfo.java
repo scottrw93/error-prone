@@ -16,11 +16,18 @@
 
 package com.google.errorprone.hubspot;
 
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Modifier;
+import java.util.Arrays;
+import java.util.Optional;
 
 import com.google.common.base.Preconditions;
+import com.google.errorprone.ErrorProneFlags;
+import com.google.errorprone.ErrorProneOptions;
 
 public class ModuleBugCheckerInfo {
+  private final Class<? extends ModuleBugChecker> checker;
+  private final ModuleBugPattern pattern;
 
   public static ModuleBugCheckerInfo create(Class<? extends ModuleBugChecker> checker) {
     ModuleBugPattern pattern =
@@ -39,6 +46,47 @@ public class ModuleBugCheckerInfo {
   }
 
   private ModuleBugCheckerInfo(Class<? extends ModuleBugChecker> checker, ModuleBugPattern pattern) {
+    this.checker = checker;
+    this.pattern = pattern;
+  }
 
+  public Optional<ModuleBugChecker> instantiateChecker(ErrorProneOptions options) {
+    try {
+      return Optional.of(instantiateCheckerUnsafe(options));
+    } catch (Throwable e) {
+      // TODO - report errors here
+      return Optional.empty();
+    }
+  }
+
+  private ModuleBugChecker instantiateCheckerUnsafe(ErrorProneOptions options) {
+    @SuppressWarnings("unchecked")
+    Optional<Constructor<ModuleBugChecker>> flagsConstructor =
+        Arrays.stream((Constructor<ModuleBugChecker>[]) checker.getConstructors())
+            .filter(
+                c -> Arrays.equals(c.getParameterTypes(), new Class<?>[] { ErrorProneFlags.class}))
+            .findFirst();
+
+    if (flagsConstructor.isPresent()) {
+      try {
+        return flagsConstructor.get().newInstance(options.getFlags());
+      } catch (ReflectiveOperationException e) {
+        throw new LinkageError("Could not instantiate BugChecker.", e);
+      }
+    }
+
+    // If no flags constructor, invoke default constructor.
+    try {
+      return checker.getConstructor().newInstance();
+    } catch (NoSuchMethodException | IllegalAccessException e) {
+      throw new LinkageError(
+          String.format(
+              "Could not instantiate ModuleBugChecker %s: Are both the class and the zero-arg"
+                  + " constructor public?",
+              checker),
+          e);
+    } catch (ReflectiveOperationException e) {
+      throw new LinkageError("Could not instantiate ModuleBugChecker.", e);
+    }
   }
 }

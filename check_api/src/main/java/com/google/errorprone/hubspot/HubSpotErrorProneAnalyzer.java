@@ -22,19 +22,26 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.RandomAccess;
 import java.util.ServiceLoader;
 import java.util.Set;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import javax.tools.JavaFileManager;
 import javax.tools.StandardLocation;
 
 import com.google.common.base.Splitter;
+import com.google.common.base.Supplier;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 import com.google.errorprone.ErrorProneAnalyzer;
 import com.google.errorprone.ErrorProneOptions;
 import com.google.errorprone.ErrorProneOptions.Severity;
 import com.google.errorprone.InvalidCommandLineOptionException;
+import com.google.errorprone.util.ASTHelpers;
+import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.util.TaskEvent;
 import com.sun.source.util.TaskEvent.Kind;
 import com.sun.source.util.TaskListener;
@@ -59,7 +66,7 @@ public class HubSpotErrorProneAnalyzer implements TaskListener {
     this.context = context;
     this.options = options;
     this.delegate = delegate;
-    this.analyzer = new ModuleBugCheckerAnalyzer(context, options);
+    this.analyzer = new ModuleBugCheckerAnalyzer(context, options, getCompilationUnitSupplier(delegate));
   }
 
   @Override
@@ -83,8 +90,6 @@ public class HubSpotErrorProneAnalyzer implements TaskListener {
     if (taskEvent.getKind() == Kind.COMPILATION) {
       analyzer.runChecks();
       HubSpotLifecycleManager.instance(context).handleShutdown();
-    } else {
-      analyzer.addContext(taskEvent);
     }
 
     try {
@@ -95,5 +100,18 @@ public class HubSpotErrorProneAnalyzer implements TaskListener {
       }
       throw t;
     }
+  }
+
+  private Supplier<Set<JCCompilationUnit>> getCompilationUnitSupplier(ErrorProneAnalyzer analyzer) {
+    return () -> analyzer.getSeen().stream()
+        .filter(t -> t instanceof JCCompilationUnit)
+        .map(t -> (JCCompilationUnit) t)
+        .filter(compilationUnit -> !shouldExcludeSourceFile(compilationUnit))
+        .collect(ImmutableSet.toImmutableSet());
+  }
+
+  private boolean shouldExcludeSourceFile(CompilationUnitTree tree) {
+    Pattern excludedPattern = options.getExcludedPattern();
+    return excludedPattern != null && excludedPattern.matcher(ASTHelpers.getFileName(tree)).matches();
   }
 }

@@ -19,61 +19,79 @@ package com.google.errorprone.hubspot;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.ServiceLoader;
 import java.util.Set;
-import java.util.TreeSet;
 
 import javax.tools.JavaFileManager;
 import javax.tools.StandardLocation;
 
 import com.google.common.base.Splitter;
+import com.google.common.base.Supplier;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
+import com.google.errorprone.BugPattern.SeverityLevel;
 import com.google.errorprone.DescriptionListener;
 import com.google.errorprone.ErrorProneOptions;
 import com.google.errorprone.ErrorProneOptions.Severity;
 import com.google.errorprone.InvalidCommandLineOptionException;
+import com.google.errorprone.VisitorState;
 import com.google.errorprone.descriptionlistener.DescriptionListeners;
-import com.sun.source.util.TaskEvent;
+import com.google.errorprone.matchers.Description;
 import com.sun.source.util.TreePath;
-import com.sun.tools.javac.api.JavacTrees;
 import com.sun.tools.javac.processing.JavacProcessingEnvironment;
+import com.sun.tools.javac.tree.JCTree.JCCompilationUnit;
 import com.sun.tools.javac.util.Context;
+import com.sun.tools.javac.util.Log;
 
 public class ModuleBugCheckerAnalyzer {
   private static final String MODULE_CHECKS_FLAG = "hubspot:module-checks";
 
   private final Context context;
+  private final ErrorProneOptions options;
   private final List<ModuleBugCheckerInfo> moduleBugCheckers;
-  private final Map<String, Severity> moduleBugCheckerSeverity;
-  private final Set<String> keys;
+  private final Map<String, SeverityLevel> severityMap;
+  private final Supplier<Set<JCCompilationUnit>> treeSupplier;
 
-  public ModuleBugCheckerAnalyzer(Context context, ErrorProneOptions options) {
+  public ModuleBugCheckerAnalyzer(
+      Context context,
+      ErrorProneOptions options,
+      Supplier<Set<JCCompilationUnit>> treeSupplier
+  ) {
     this.context = context;
+    this.options = options;
     this.moduleBugCheckers = loadModuleChecks(context, options);
-    this.moduleBugCheckerSeverity = getModuleBugCheckerSeverities(this.moduleBugCheckers, options);
-    this.keys = new TreeSet<>();
-  }
-
-  public void addContext(TaskEvent event) {
-    TreePath path = JavacTrees.instance(context).getPath(event.getTypeElement());
-    if (path == null) {
-      path = new TreePath(event.getCompilationUnit());
-    }
-
-    String name = path.getCompilationUnit().getSourceFile().getName();
-    keys.add(name);
+    this.severityMap = getModuleBugCheckerSeverities(this.moduleBugCheckers, options);
+    this.treeSupplier = treeSupplier;
   }
 
   public void runChecks() {
+    DescriptionListener.Factory factory = DescriptionListeners.factory(context);
     for (ModuleBugCheckerInfo info : moduleBugCheckers) {
-      for (String key : keys) {
+      Optional<ModuleBugChecker> checker = info.instantiateChecker(options);
+      if (checker.isEmpty()) {
+        continue;
+      }
+
+      Set<JCCompilationUnit> targets = treeSupplier.get();
+      for (JCCompilationUnit tree : targets) {
+        Log log = Log.instance(context);
+        DescriptionListener descriptionListener = factory.getDescriptionListener(log, tree);
+        VisitorState state = createVisitorState(context, descriptionListener).withPath(new TreePath(tree));
+        state.reportMatch(checker.get().visitCompilationUnit(tree, state));
       }
     }
+  }
+
+  private VisitorState createVisitorState(Context context, DescriptionListener listener) {
+    return VisitorState.createConfiguredForCompilation(
+        context,
+        listener,
+        severityMap,
+        options);
   }
 
   private static List<ModuleBugCheckerInfo> loadModuleChecks(Context context, ErrorProneOptions options) {
@@ -111,7 +129,7 @@ public class ModuleBugCheckerAnalyzer {
     }
   }
 
-  private static Map<String, Severity> getModuleBugCheckerSeverities(
+  private static Map<String, SeverityLevel> getModuleBugCheckerSeverities(
       List<ModuleBugCheckerInfo> moduleBugCheckers,
       ErrorProneOptions options
   ) {

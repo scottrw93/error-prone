@@ -16,5 +16,10 @@
 
 package com.google.errorprone.hubspot;
 
+import com.google.errorprone.VisitorState;
+import com.google.errorprone.matchers.Description;
+import com.sun.source.tree.CompilationUnitTree;
+
 public abstract class ModuleBugChecker {
+  public abstract Description visitCompilationUnit(CompilationUnitTree tree, VisitorState state);
 }
